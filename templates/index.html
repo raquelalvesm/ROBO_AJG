@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPA Pagamento Perícia</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; color: #333; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        h1 { color: #1a73e8; margin-bottom: 20px; }
+        h1 small { font-size: 14px; color: #888; font-weight: 400; }
+        .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+        .card h2 { font-size: 16px; margin-bottom: 12px; color: #555; }
+        .process-list { max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 13px; }
+        .process-list li { padding: 2px 0; }
+        .btn { display: inline-block; padding: 10px 24px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: .2s; margin-right: 8px; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+        .btn-primary { background: #1a73e8; color: #fff; }
+        .btn-primary:hover:not(:disabled) { background: #1558b0; }
+        .btn-success { background: #34a853; color: #fff; }
+        .btn-success:hover:not(:disabled) { background: #2d9249; }
+        .btn-danger { background: #ea4335; color: #fff; }
+        .btn-danger:hover:not(:disabled) { background: #c62828; }
+        .btn-secondary { background: #5f6368; color: #fff; }
+        .btn-secondary:hover:not(:disabled) { background: #4a4d51; }
+        .btn-ajg { background: #e8710a; color: #fff; }
+        .btn-ajg:hover:not(:disabled) { background: #c56008; }
+        .log-box { background: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; padding: 12px; border-radius: 6px; height: 250px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+        .log-box-ajg { border-left: 4px solid #e8710a; }
+        .log-box-pje { border-left: 4px solid #1a73e8; }
+        .toolbar { margin: 12px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .chrome-input { flex: 1 1 280px; padding: 9px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; font-family: 'Consolas', monospace; min-width: 260px; }
+        .chrome-input:focus { outline: none; border-color: #1a73e8; }
+        .input-hint { font-size: 12px; color: #888; margin-left: 4px; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-left: 8px; }
+        .badge-running { background: #e8f0fe; color: #1a73e8; }
+        .badge-done { background: #e6f4ea; color: #34a853; }
+        .badge-idle { background: #f1f3f4; color: #5f6368; }
+        .badge-ajg { background: #fff3e0; color: #e8710a; }
+        .footer { margin-top: 20px; font-size: 12px; color: #888; text-align: center; }
+        .hidden { display: none; }
+        .upload-area { border: 2px dashed #ccc; border-radius: 8px; padding: 16px; text-align: center; cursor: pointer; transition: .2s; }
+        .upload-area:hover { border-color: #1a73e8; background: #f8faff; }
+        .upload-area.dragover { border-color: #1a73e8; background: #e8f0fe; }
+        input[type="file"] { display: none; }
+        .success-msg { color: #34a853; font-size: 13px; margin-top: 6px; }
+        .error-msg { color: #ea4335; font-size: 13px; margin-top: 6px; }
+        .section-ajg { border-top: 3px solid #e8710a; padding-top: 4px; }
+        .divider { border: none; border-top: 2px dashed #ddd; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>RPA Pagamento Perícia <small>PJe + AJG</small></h1>
+
+   
+
+        <div class="card">
+          
+            <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+                <p><strong>Clique ou arraste</strong> um arquivo .docx</p>
+                <input type="file" id="fileInput" accept=".docx">
+                <div id="uploadMsg"></div>
+            </div>
+        </div>
+
+        <hr class="divider">
+
+        <div class="card">
+            <h2>1. Extração PJe</h2>
+           
+            <div class="toolbar">
+                <button class="btn btn-primary" id="btnStart" onclick="startScraping()">Iniciar extração</button>
+                <button class="btn btn-success hidden" id="btnLogin" onclick="confirmLogin()">✓ Já loguei no PJe</button>
+                <button class="btn btn-danger hidden" id="btnStop" onclick="stopScraping()">Parar</button>
+                <button class="btn btn-secondary hidden" id="btnCloseBrowser" onclick="closeBrowser()">Fechar navegador</button>
+                <button class="btn btn-success hidden" id="btnDownload" onclick="downloadFile()">Baixar resultado.xlsx</button>
+                <span id="statusBadge" class="badge badge-idle">Parado</span>
+            </div>
+            <div class="log-box log-box-pje" id="logBox"></div>
+        </div>
+
+        <div class="card section-ajg hidden" id="sectionAJG">
+            <h2>2. Robô AJG</h2>
+            <!-- <div class="toolbar">
+                <input type="text" class="chrome-input" id="chromeDebuggerAJG" placeholder="IP do Chrome do cliente (ex: 172.27.6.50:9222)" title="Deixe vazio para abrir o Chrome no servidor">
+                <span class="input-hint">vazio = navegador no servidor</span>
+            </div> -->
+            <div class="toolbar">
+                <button class="btn btn-ajg" id="btnStartAJG" onclick="startAJG()">Iniciar Robô AJG</button>
+                <button class="btn btn-success hidden" id="btnLoginAJG" onclick="confirmLoginAJG()">✓ Já loguei no AJG</button>
+                <button class="btn btn-danger hidden" id="btnStopAJG" onclick="stopAJG()">Parar AJG</button>
+                <button class="btn btn-secondary hidden" id="btnCloseBrowserAJG" onclick="closeBrowserAJG()">Fechar navegador</button>
+                <span id="statusBadgeAJG" class="badge badge-idle">Parado</span>
+            </div>
+            <div class="log-box log-box-ajg" id="logBoxAJG"></div>
+        </div>
+
+        <div class="footer">Flask - RPA Pagamento Perícia</div>
+    </div>
+
+    <script>
+        const processList = document.getElementById('processList');
+        const logBox = document.getElementById('logBox');
+        const logBoxAJG = document.getElementById('logBoxAJG');
+        const sectionAJG = document.getElementById('sectionAJG');
+
+        // PJe elements
+        const btnStart = document.getElementById('btnStart');
+        const btnLogin = document.getElementById('btnLogin');
+        const btnStop = document.getElementById('btnStop');
+        const btnCloseBrowser = document.getElementById('btnCloseBrowser');
+        const btnDownload = document.getElementById('btnDownload');
+        const statusBadge = document.getElementById('statusBadge');
+
+        // AJG elements
+        const btnStartAJG = document.getElementById('btnStartAJG');
+        const btnLoginAJG = document.getElementById('btnLoginAJG');
+        const btnStopAJG = document.getElementById('btnStopAJG');
+        const btnCloseBrowserAJG = document.getElementById('btnCloseBrowserAJG');
+        const statusBadgeAJG = document.getElementById('statusBadgeAJG');
+
+        let logStream = null;
+        let scraping = false;
+        let logStreamAJG = null;
+        let scrapingAJG = false;
+
+        // ── Geral ──────────────────────────────────────────────────
+
+        function loadProcessos() {
+            fetch('/processos')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        processList.innerHTML = `<li style="color:red">Erro: ${data.error}</li>`;
+                        return;
+                    }
+                    processList.innerHTML = data.processos.map((p, i) =>
+                        `<li>${String(i + 1).padStart(3, ' ')} - ${p}</li>`
+                    ).join('');
+                });
+        }
+
+        function uploadFile(file) {
+            const msg = document.getElementById('uploadMsg');
+            const formData = new FormData();
+            formData.append('file', file);
+            msg.className = '';
+            msg.textContent = 'Enviando...';
+            fetch('/upload-pasta', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        msg.className = 'error-msg';
+                        msg.textContent = 'Erro: ' + data.error;
+                    } else {
+                        msg.className = 'success-msg';
+                        msg.textContent = '✓ ' + data.msg;
+                        loadProcessos();
+                    }
+                })
+                .catch(() => {
+                    msg.className = 'error-msg';
+                    msg.textContent = 'Erro ao enviar arquivo';
+                });
+        }
+
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) uploadFile(e.target.files[0]);
+        });
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+        });
+
+        window.onload = () => {
+            loadProcessos();
+            checkResultado();
+            autoPreencherIp();
+        };
+
+        function autoPreencherIp() {
+            fetch('/meu-ip')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.ip && !document.getElementById('chromeDebuggerPJe').value) {
+                        const valor = data.ip + ':9222';
+                        document.getElementById('chromeDebuggerPJe').value = valor;
+                        document.getElementById('chromeDebuggerAJG').value = valor;
+                    }
+                });
+        }
+
+        function checkResultado() {
+            fetch('/resultado-existe')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.existe) sectionAJG.classList.remove('hidden');
+                });
+        }
+
+        function setStatus(el, text, cls) {
+            el.textContent = text;
+            el.className = 'badge ' + cls;
+        }
+
+        function appendLog(box, msg) {
+            const div = document.createElement('div');
+            div.textContent = msg;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // ── PJe Scraper ────────────────────────────────────────────
+
+        function startLogStream() {
+            if (logStream) logStream.close();
+            logStream = new EventSource('/logs');
+            logStream.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.done) {
+                    setStatus(statusBadge, 'Concluído', 'badge-done');
+                    btnDownload.classList.remove('hidden');
+                    btnCloseBrowser.classList.remove('hidden');
+                    btnStart.disabled = false;
+                    btnStop.classList.add('hidden');
+                    sectionAJG.classList.remove('hidden');
+                    scraping = false;
+                    logStream.close();
+                    return;
+                }
+                if (data.msg) {
+                    appendLog(logBox, data.msg);
+                    if (data.msg.includes('Chrome aberto')) {
+                        btnLogin.classList.remove('hidden');
+                        setStatus(statusBadge, 'Aguardando login PJe...', 'badge-running');
+                    }
+                    if (data.msg.includes('Login PJe confirmado')) {
+                        btnLogin.classList.add('hidden');
+                        setStatus(statusBadge, 'Extraindo dados...', 'badge-running');
+                    }
+                    if (data.msg.includes('Navegador permanece aberto')) {
+                        btnCloseBrowser.classList.remove('hidden');
+                    }
+                    if (data.msg.includes('Finalizado') || data.msg.includes('interrompida')) {
+                        btnDownload.classList.remove('hidden');
+                        sectionAJG.classList.remove('hidden');
+                    }
+                }
+            };
+            logStream.onerror = () => {};
+        }
+
+        function startScraping() {
+            btnStart.disabled = true;
+            btnDownload.classList.add('hidden');
+            btnCloseBrowser.classList.add('hidden');
+            btnLogin.classList.add('hidden');
+            logBox.innerHTML = '';
+            setStatus(statusBadge, 'Iniciando...', 'badge-running');
+
+            fetch('/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chrome_debugger: document.getElementById('chromeDebuggerPJe').value.trim() })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        appendLog(logBox, 'ERRO: ' + data.error);
+                        btnStart.disabled = false;
+                        setStatus(statusBadge, 'Erro', 'badge-idle');
+                        return;
+                    }
+                    scraping = true;
+                    btnStop.classList.remove('hidden');
+                    startLogStream();
+                });
+        }
+
+        function confirmLogin() {
+            fetch('/login', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) appendLog(logBox, 'ERRO: ' + data.error);
+                });
+        }
+
+        function stopScraping() {
+            if (!confirm('Tem certeza que deseja parar?')) return;
+            fetch('/stop', { method: 'POST' });
+            btnStop.classList.add('hidden');
+            appendLog(logBox, '[---] Parando... (aguarde o fim do processo atual)');
+        }
+
+        function closeBrowser() {
+            fetch('/close-browser', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    btnCloseBrowser.classList.add('hidden');
+                });
+        }
+
+        function downloadFile() {
+            window.open('/download', '_blank');
+        }
+
+        setInterval(() => {
+            fetch('/status')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.running && !scraping) {
+                        scraping = true;
+                        btnLogin.classList.add('hidden');
+                        btnStop.classList.remove('hidden');
+                        startLogStream();
+                    }
+                    if (!data.running && scraping) {
+                        scraping = false;
+                        btnStop.classList.add('hidden');
+                        btnStart.disabled = false;
+                    }
+                    if (data.done && !data.running) {
+                        btnDownload.classList.remove('hidden');
+                        btnCloseBrowser.classList.remove('hidden');
+                        setStatus(statusBadge, 'Concluído', 'badge-done');
+                        sectionAJG.classList.remove('hidden');
+                    }
+                });
+        }, 2000);
+
+        // ── AJG Scraper ────────────────────────────────────────────
+
+        function startLogStreamAJG() {
+            if (logStreamAJG) logStreamAJG.close();
+            logStreamAJG = new EventSource('/logs-ajg');
+            logStreamAJG.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.done) {
+                    setStatus(statusBadgeAJG, 'Concluído', 'badge-done');
+                    btnCloseBrowserAJG.classList.remove('hidden');
+                    btnStartAJG.disabled = false;
+                    btnStopAJG.classList.add('hidden');
+                    scrapingAJG = false;
+                    logStreamAJG.close();
+                    return;
+                }
+                if (data.msg) {
+                    appendLog(logBoxAJG, data.msg);
+                    if (data.msg.includes('AJG aberto')) {
+                        btnLoginAJG.classList.remove('hidden');
+                        setStatus(statusBadgeAJG, 'Aguardando login AJG...', 'badge-ajg');
+                    }
+                    if (data.msg.includes('Login AJG confirmado')) {
+                        btnLoginAJG.classList.add('hidden');
+                        setStatus(statusBadgeAJG, 'Processando AJG...', 'badge-ajg');
+                    }
+                    if (data.msg.includes('Navegador permanece aberto')) {
+                        btnCloseBrowserAJG.classList.remove('hidden');
+                    }
+                }
+            };
+            logStreamAJG.onerror = () => {};
+        }
+
+        function startAJG() {
+            btnStartAJG.disabled = true;
+            btnCloseBrowserAJG.classList.add('hidden');
+            btnLoginAJG.classList.add('hidden');
+            logBoxAJG.innerHTML = '';
+            setStatus(statusBadgeAJG, 'Iniciando...', 'badge-ajg');
+
+            fetch('/start-ajg', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chrome_debugger: document.getElementById('chromeDebuggerAJG').value.trim() })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        appendLog(logBoxAJG, 'ERRO: ' + data.error);
+                        btnStartAJG.disabled = false;
+                        setStatus(statusBadgeAJG, 'Erro', 'badge-idle');
+                        return;
+                    }
+                    scrapingAJG = true;
+                    btnStopAJG.classList.remove('hidden');
+                    startLogStreamAJG();
+                });
+        }
+
+        function confirmLoginAJG() {
+            fetch('/login-ajg', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) appendLog(logBoxAJG, 'ERRO: ' + data.error);
+                });
+        }
+
+        function stopAJG() {
+            if (!confirm('Tem certeza que deseja parar o AJG?')) return;
+            fetch('/stop-ajg', { method: 'POST' });
+            btnStopAJG.classList.add('hidden');
+            appendLog(logBoxAJG, '[---] Parando... (aguarde o fim do processo atual)');
+        }
+
+        function closeBrowserAJG() {
+            fetch('/close-browser-ajg', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    btnCloseBrowserAJG.classList.add('hidden');
+                });
+        }
+
+        setInterval(() => {
+            fetch('/status-ajg')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.running && !scrapingAJG) {
+                        scrapingAJG = true;
+                        btnLoginAJG.classList.add('hidden');
+                        btnStopAJG.classList.remove('hidden');
+                        startLogStreamAJG();
+                    }
+                    if (!data.running && scrapingAJG) {
+                        scrapingAJG = false;
+                        btnStopAJG.classList.add('hidden');
+                        btnStartAJG.disabled = false;
+                    }
+                    if (data.done && !data.running) {
+                        btnCloseBrowserAJG.classList.remove('hidden');
+                        setStatus(statusBadgeAJG, 'Concluído', 'badge-done');
+                    }
+                });
+        }, 2000);
+    </script>
+<script>
+        function jaLoguei() {
+            fetch('/ja-loguei', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                } else {
+                    alert(data.msg);
+                    // Esconder box de login
+                    document.getElementById('loginPJeBox').style.display = 'none';
+                }
+            })
+            .catch(e => {
+                alert('Erro ao comunicar com o servidor');
+            });
+        }
+        
+        // Função para mostrar/esconder o box de login
+        function toggleLoginBox(show) {
+            var box = document.getElementById('loginPJeBox');
+            if (show) {
+                box.style.display = 'block';
+            } else {
+                box.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
