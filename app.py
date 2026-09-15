@@ -1,12 +1,61 @@
-import json, os, subprocess, threading, time
+import json, os, subprocess, threading, time, sys, traceback
 import webbrowser
 from flask import Flask, Response, render_template, request, jsonify, send_file
+from paths import base_dir, pasta_logs
 from scraper import Scraper, CAMINHO_DOCX, CAMINHO_SAIDA
 from ajg_scraper import ScraperAJG
 from paths import base_dir
 from util_chrome import criar_driver
 
 app = Flask(__name__)
+
+# ── Captura global de erros (exe windowed fecha em silêncio) ─────
+def _pasta_logs():
+    import paths
+    pasta = os.path.join(paths.base_dir(), 'logs')
+    try:
+        os.makedirs(pasta, exist_ok=True)
+    except Exception:
+        pass
+    return pasta
+
+
+def _salvar_crash(exc, tb=None):
+    try:
+        pasta = _pasta_logs()
+        with open(os.path.join(pasta, 'erro_crash.txt'), 'a', encoding='utf-8') as f:
+            f.write(f'\n===== {time.strftime("%d/%m/%Y %H:%M:%S")} =====\n')
+            f.write(f'Excecao: {exc}\n')
+            if tb:
+                f.write('Traceback:\n')
+                f.write(''.join(tb))
+            else:
+                f.write(traceback.format_exc())
+    except Exception:
+        pass
+
+
+def _hook_excecao_global(tp, val, tb):
+    try:
+        _salvar_crash(val, traceback.format_exception(tp, val, tb))
+    finally:
+        sys.__excepthook__(tp, val, tb)
+
+
+sys.excepthook = _hook_excecao_global
+threading.excepthook = lambda args: _salvar_crash(args.exc_value, args.exc_traceback)
+
+
+def _criar_estrutura():
+    """Garante a existencia das pastas de saida na inicializacao."""
+    _pasta_logs()
+    try:
+        os.makedirs(os.path.join(paths.base_dir(), 'perfil_do_chrome'), exist_ok=True)
+    except Exception:
+        pass
+
+
+_criar_estrutura()
 
 scraper = None
 scraper_thread = None
@@ -119,6 +168,55 @@ def parar():
     return jsonify({'error': 'sem scraper ativo'}), 400
 
 
+@app.route('/close-browser', methods=['POST'])
+def fechar_navegador_pje():
+    if scraper and scraper.driver:
+        try:
+            scraper.driver.quit()
+        except Exception:
+            pass
+    return jsonify({'status': 'fechado'})
+
+
+@app.route('/shutdown', methods=['POST'])
+def shutdown():
+    """Fecha tudo e encerra o exe de forma garantida."""
+    def _encerrar():
+        time.sleep(0.8)
+        try:
+            if scraper and getattr(scraper, 'driver', None):
+                scraper.driver.quit()
+        except Exception:
+            pass
+        try:
+            if ajg_scraper and getattr(ajg_scraper, 'driver', None):
+                ajg_scraper.driver.quit()
+        except Exception:
+            pass
+        try:
+            from util_processo import matar_processo_chrome as _m
+            _m()
+        except Exception:
+            pass
+        try:
+            from scraper import matar_processo_chrome as _m1
+            _m1()
+        except Exception:
+            pass
+        try:
+            from ajg_scraper import matar_processo_chrome as _m2
+            _m2()
+        except Exception:
+            pass
+        try:
+            os.kill(os.getpid(), 9)
+        except Exception:
+            os._exit(0)
+
+    threading.Thread(target=_encerrar, daemon=True).start()
+    return jsonify({'status': 'encerrando', 'msg': 'Encerrando o aplicativo...'})
+
+
 @app.route('/logs')
 def stream_logs():
     def generate():
@@ -167,6 +265,15 @@ def conectar_pje():
     return jsonify({"status": "chrome_aberto", "msg": "Chrome aberto para PJe. Faça login e clique em \"Ja loguei\"."})
 
 
+@app.route('/login', methods=['POST'])
+def login_pje():
+    """Usuario clicou que ja logou no PJe. O robô já pode assumir o controle."""
+    if scraper:
+        scraper.login_event.set()
+        return jsonify({"status": "ok", "msg": "Sessao PJe herdada. Robo vai assumir."})
+    return jsonify({"error": "Sem scraper ativo"}), 400
+
+
 @app.route('/ja-loguei', methods=['POST'])
 def ja_loguei():
     """Usuario clicou que ja logou no PJe. O robô já pode assumir o controle."""
@@ -179,6 +286,31 @@ def ja_loguei():
 @app.route('/resultado-existe')
 def resultado_existe():
     return jsonify({'existe': os.path.exists(CAMINHO_SAIDA)})
+
+
+@app.route('/varas')
+def listar_varas():
+    """Retorna as varas (unidades) encontradas no resultado.xlsx."""
+    import openpyxl
+    if not os.path.exists(CAMINHO_SAIDA):
+        return jsonify({'varas': []})
+    try:
+        wb = openpyxl.load_workbook(CAMINHO_SAIDA, read_only=True, data_only=True)
+        ws = wb.active
+        cabecalhos = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+        vara_idx = cabecalhos.index('vara') if 'vara' in cabecalhos else None
+        if vara_idx is None:
+            wb.close()
+            return jsonify({'varas': []})
+        varas = set()
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            v = str(row[vara_idx]).strip() if row[vara_idx] else ''
+            if v and v.lower() != 'none':
+                varas.add(v)
+        wb.close()
+        return jsonify({'varas': sorted(varas)})
+    except Exception:
+        return jsonify({'varas': []})
 
 
 @app.route('/download')
@@ -195,12 +327,14 @@ def iniciar_ajg():
     global ajg_scraper, ajg_thread
     if ajg_scraper and ajg_scraper.running:
         return jsonify({'error': 'Robo AJG ja esta em execucao'}), 400
-    # Conecta no Chrome já aberto pelo PJe (porta 9222)
-    # Se ja tiver Chrome com debug rodando, reusa; se nao, abre novo Chrome
-    ajg_scraper = ScraperAJG(debugger_address=None)
+    dados = request.get_json(silent=True) or {}
+    vara = dados.get('vara', '').strip()
+    if not vara:
+        return jsonify({'error': 'Selecione a unidade (Vara) antes de iniciar.'}), 400
+    ajg_scraper = ScraperAJG(debugger_address=None, vara=vara)
     ajg_thread = threading.Thread(target=ajg_scraper.run, daemon=True)
     ajg_thread.start()
-    return jsonify({'status': 'iniciado'})
+    return jsonify({'status': 'iniciado', 'vara': vara})
 
 
 @app.route('/login-ajg', methods=['POST'])
@@ -262,10 +396,42 @@ def status_ajg():
     return jsonify({'running': False, 'done': False, 'log_count': 0})
 
 
+@app.route('/processos')
+def lista_processos():
+    """Lista processos do resultado.xlsx, com filtro opcional por vara."""
+    vara_filtro = request.args.get('vara', '').strip()
+    
+    if not os.path.exists(CAMINHO_SAIDA):
+        return jsonify({'processos': [], 'msg': 'resultado.xlsx nao encontrado.'})
+    
+    import openpyxl
+    wb = openpyxl.load_workbook(CAMINHO_SAIDA, read_only=True, data_only=True)
+    ws = wb.active
+    cabecalhos = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+    processos = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        dados_row = {}
+        for col_idx, coluna in enumerate(cabecalhos):
+            dados_row[coluna] = str(row[col_idx]) if row[col_idx] else ''
+        if dados_row.get('nr_processo'):
+            # Aplicar filtro por vara se informado
+            if vara_filtro and vara_filtro.upper() not in str(dados_row.get('vara', '')).upper():
+                continue
+            processos.append(dados_row)
+    wb.close()
+    
+    return jsonify({'processos': processos, 'total': len(processos)})
+
+
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 8080))
     print(f'Servidor rodando em http://localhost:{PORT}')
     print(f'Para acessar de outro computador, use http://<SEU_IP>:{PORT}')
+    try:
+        from util_processo import limpar_na_inicializacao
+        limpar_na_inicializacao()
+    except Exception:
+        pass
     if not os.environ.get('WERKZEUG_RUN_MAIN') and not app.debug:
         threading.Timer(1.5, lambda: abrir_interface(f'http://localhost:{PORT}')).start()
     app.run(debug=False, host='0.0.0.0', port=PORT)

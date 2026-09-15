@@ -42,13 +42,10 @@ VALOR_OUTROS = 'R$ 300,00'
 
 
 def matar_processo_chrome():
-    """Matiza todos os processos chrome.exe e chromedriver.exe em execução."""
+    """Mata todos os processos chrome.exe e chromedriver.exe em execução."""
     try:
-        import subprocess
-        # Tenta matar processos chrome e chromedriver
-        subprocess.run(['taskkill', '/IM', 'chrome.exe', '/F'], capture_output=True, shell=True)
-        subprocess.run(['taskkill', '/IM', 'chromedriver.exe', '/F'], capture_output=True, shell=True)
-        time.sleep(1)
+        from util_processo import matar_processo_chrome as _m
+        _m()
     except Exception:
         pass
 
@@ -177,87 +174,245 @@ class Scraper:
         self.driver.switch_to.frame(iframe)
         time.sleep(2)
 
-    def buscar_pje(self, nr_processo):
+    def sessao_valida(self):
         if not self.driver:
-            return 'SEM_CONEXAO'
+            return False
         try:
-            # Wait for login event (user clicked "Já loguei no PJe")
-            self.login_event.wait()
-            self._check_stop()
-            self.log('Login PJe confirmado. Iniciando busca...')
-            self.driver.switch_to.window(self.driver.window_handles[0])
-            self.entrar_ngframe()
-            self._check_stop()
-            menu = WebDriverWait(self.driver, 15).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '#liConsultaProcessual a')))
-            menu.click()
-            time.sleep(2)
-            self._check_stop()
-            pyperclip.copy(nr_processo)
-            ActionChains(self.driver).key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
-            time.sleep(3)
-            self._check_stop()
-            frame_consulta = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, 'frameConsultaProcessual')))
-            self.driver.switch_to.frame(frame_consulta)
-            time.sleep(1)
-            self._check_stop()
-            botao = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '#fPP\\:searchProcessos')))
-            botao.click()
-            time.sleep(3)
-            self._check_stop()
-            link_processo = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'a.btn-link.btn-condensed')))
-            link_processo.click()
-            time.sleep(3)
-            self._check_stop()
-            self.driver.switch_to.window(self.driver.window_handles[-1])
-            time.sleep(3)
-            self._check_stop()
-            self.driver.switch_to.default_content()
-            campo = self.driver.find_element(By.ID, 'divTimeLine:txtPesquisa')
-            campo.clear()
-            campo.send_keys('Juntada de Laudo Médico')
-            time.sleep(2)
-            self._check_stop()
-            botoes = self.driver.find_elements(By.TAG_NAME, 'button')
-            clicked = False
-            for b in botoes:
-                bid = b.get_attribute('id') or ''
-                if 'btnPesquisa' in bid or 'pesquisa' in bid.lower():
-                    b.click()
-                    time.sleep(3)
-                    clicked = True
+            self.driver.current_window_handle
+            return True
+        except Exception:
+            return False
+
+    def _caminho_chrome(self):
+        import os
+        candidatos = [
+            os.path.join(os.environ.get('PROGRAMFILES', r'C:\Program Files'),
+                         r'Google\Chrome\Application\chrome.exe'),
+            os.path.join(os.environ.get('PROGRAMFILES(X86)', r'C:\Program Files (x86)'),
+                         r'Google\Chrome\Application\chrome.exe'),
+            os.path.join(os.environ.get('LOCALAPPDATA', ''),
+                         r'Google\Chrome\Application\chrome.exe'),
+        ]
+        for c in candidatos:
+            if c and os.path.exists(c):
+                return c
+        return None
+
+    def recuperar_sessao(self):
+        """Relança Chrome com perfil persistente (login mantido). Evita matar o Chrome que vamos subir."""
+        try:
+            if self.driver:
+                try:
+                    self.driver.quit()
+                except Exception:
+                    pass
+                self.driver = None
+        except Exception:
+            self.driver = None
+        # NÃO mata todos os chrome.exe aqui - pode matar o que vamos subir
+        # Apenas mata chromedriver órfãos
+        try:
+            from util_processo import matar_chromedriver
+            matar_chromedriver()
+        except Exception:
+            pass
+        time.sleep(3)
+        try:
+            import subprocess
+            chrome_path = self._caminho_chrome()
+            perfil = os.path.join(base_dir(), 'perfil_do_chrome')
+            if chrome_path:
+                subprocess.Popen([chrome_path, f'--user-data-dir={perfil}',
+                                  '--remote-debugging-port=9222', '--new-window',
+                                  'https://pje1g.trf1.jus.br/pje/'])
+            # Aguarda a porta 9222 responder antes de reconectar
+            import urllib.request
+            for _ in range(60):
+                try:
+                    urllib.request.urlopen('http://127.0.0.1:9222/json', timeout=2)
                     break
-            if not clicked:
-                campo.send_keys(Keys.RETURN)
-                time.sleep(3)
-            self._check_stop()
-            
-            # NOVO: Busca direta na timeline - procura por "Juntada de Laudo Médico" nos movimentos
-            try:
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, ".text-upper.texto-movimento"))
-                )
-                self._check_stop()
-                movimentos = self.driver.find_elements(By.CSS_SELECTOR, ".text-upper.texto-movimento")
-                for mov in movimentos:
-                    texto = mov.text.strip().upper()
-                    if "JUNTADA DE LAUDO MÉDICO" in texto or "JUNTADA DE LAUDO MEDICO" in texto:
-                        self.log(f'Laudo médico encontrado na timeline: {mov.text[:150]}')
-                        return 'OK'
-                self.log('Laudo médico NÃO encontrado na timeline')
-                return 'NÃO'
-            except Exception as e:
-                self.log(f'Erro ao buscar na timeline: {e}')
-                return 'NÃO'
+                except Exception:
+                    time.sleep(1)
+            self.conectar_pje()
+            time.sleep(5)  # espera a página carregar completamente
+            return self.sessao_valida()
         except Exception as e:
-            if 'Interrompido pelo usuario' in str(e):
-                self.log('Busca interrompida pelo usuario')
-                return 'PARADO'
-            self.log(f'ERRO buscar_pje {nr_processo}: {e}')
-            return f'ERRO: {e}'
-        finally:
-            if len(self.driver.window_handles) >= 2:
-                self.driver.close()
+            self.log(f'Falha ao recuperar sessao do Chrome: {e}')
+            self.driver = None
+            return False
+
+    def buscar_pje(self, nr_processo, tentativas=2):
+        while tentativas > 0:
+            if not self.driver:
+                self.log('Sessao do Chrome nao disponivel. Tentando reconectar...')
+                if not self.recuperar_sessao():
+                    return 'ERRO: Chrome desconectado'
+            if not self.sessao_valida():
+                self.log('Sessao do Chrome indisponivel. Tentando reconectar...')
+                if not self.recuperar_sessao():
+                    return 'ERRO: Chrome desconectado'
+            try:
+                self._check_stop()
+                self.log('Login PJe confirmado. Iniciando busca...')
                 self.driver.switch_to.window(self.driver.window_handles[0])
+                self.driver.switch_to.default_content()
+                self._check_stop()
+                self.entrar_ngframe()
+                self._check_stop()
+                # Clica no ícone Home (fa fa-home) para resetar o estado do ngFrame
+                try:
+                    home = WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '.fa.fa-home')))
+                    home.click()
+                    time.sleep(2)
+                except Exception:
+                    pass
+                menu = WebDriverWait(self.driver, 15).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '#liConsultaProcessual a')))
+                menu.click()
+                time.sleep(2)
+                self._check_stop()
+                # Cola o NÚMERO COMPLETO do processo ANTES de entrar no frameConsultaProcessual
+                # (campo de busca fica no nível do ngFrame, não dentro do iframe)
+                pyperclip.copy(nr_processo)
+                ActionChains(self.driver).key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).perform()
+                time.sleep(0.3)
+                ActionChains(self.driver).key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
+                time.sleep(3)
+                self._check_stop()
+                frame_consulta = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, 'frameConsultaProcessual')))
+                self.driver.switch_to.frame(frame_consulta)
+                botao = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '#fPP\\:searchProcessos')))
+                botao.click()
+                time.sleep(3)
+                self._check_stop()
+                link_processo = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'a.btn-link.btn-condensed')))
+                link_processo.click()
+                time.sleep(3)
+                self._check_stop()
+                self.driver.switch_to.window(self.driver.window_handles[-1])
+                time.sleep(3)
+                self._check_stop()
+                self.driver.switch_to.default_content()
+                campo = self.driver.find_element(By.ID, 'divTimeLine:txtPesquisa')
+                campo.clear()
+                campo.send_keys('Juntada de Laudo Médico')
+                time.sleep(2)
+                self._check_stop()
+                botoes = self.driver.find_elements(By.TAG_NAME, 'button')
+                clicked = False
+                for b in botoes:
+                    bid = b.get_attribute('id') or ''
+                    if 'btnPesquisa' in bid or 'pesquisa' in bid.lower():
+                        b.click()
+                        time.sleep(3)
+                        clicked = True
+                        break
+                if not clicked:
+                    campo.send_keys(Keys.RETURN)
+                    time.sleep(3)
+                self._check_stop()
+                
+                # Busca direta na timeline - procura por "Juntada de Laudo Médico" nos movimentos
+                try:
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, ".text-upper.texto-movimento"))
+                    )
+                    self._check_stop()
+                    movimentos = self.driver.find_elements(By.CSS_SELECTOR, ".text-upper.texto-movimento")
+                    for mov in movimentos:
+                        texto = mov.text.strip().upper()
+                        if "JUNTADA DE LAUDO MÉDICO" in texto or "JUNTADA DE LAUDO MEDICO" in texto:
+                            self.log(f'Laudo médico encontrado na timeline: {mov.text[:150]}')
+                            # ── VALIDAÇÃO ANTI-FALSO-POSITIVO ─────────────
+                            # Confirma que a timeline aberta é realmente do processo pesquisado.
+                            # Se o PJe não recarregou a timeline (ficou cache do processo anterior),
+                            # o número exibido não bate com o alvo → NÃO marcar OK.
+                            try:
+                                digitos_alvo = re.sub(r'\D', '', nr_processo)
+                                nucleo_alvo = digitos_alvo[:12] if len(digitos_alvo) >= 12 else digitos_alvo
+
+                                def _timeline_exibe_alvo():
+                                    corpo = self.driver.find_element(By.TAG_NAME, 'body').text
+                                    digitos_corpo = re.sub(r'\D', '', corpo)
+                                    return bool(nucleo_alvo) and nucleo_alvo in digitos_corpo
+
+                                if _timeline_exibe_alvo():
+                                    self.log(f'Validado: timeline exibe o processo {nr_processo}. Confirmando OK.')
+                                    return 'OK'
+
+                                # Cache do processo anterior. Forca um F5/reload da timeline para
+                                # limpar o cache do processo anterior e re-executar a consulta no
+                                # servidor, recarregando o movimento correto do processo alvo.
+                                for tent in range(1, 4):
+                                    self.log(f'Cache detectado (tentativa {tent}/3). Aplicando F5 na timeline...')
+                                    try:
+                                        self.driver.refresh()
+                                        time.sleep(5)
+                                        self._check_stop()
+                                    except Exception as re_:
+                                        self.log(f'Nao foi possivel dar F5 na timeline ({re_}).')
+                                        break
+                                    try:
+                                        WebDriverWait(self.driver, 15).until(
+                                            EC.presence_of_element_located((By.CSS_SELECTOR, ".text-upper.texto-movimento"))
+                                        )
+                                    except Exception:
+                                        pass
+                                    time.sleep(2)
+                                    self._check_stop()
+                                    if _timeline_exibe_alvo():
+                                        self.log(f'Validado (apos F5 na timeline): timeline exibe o '
+                                                 f'processo {nr_processo}. Confirmando OK.')
+                                        return 'OK'
+                                self.log(f'ALERTA FALSO POSITIVO: timeline NAO exibe o processo {nr_processo} '
+                                         f'(mesmo apos F5 3x - provavelmente cache permanente do processo '
+                                         f'anterior). Marcando NÃO para evitar erro.')
+                                return 'NÃO'
+                            except Exception as ve:
+                                self.log(f'Falha ao validar processo na timeline ({ve}). Tratando como NÃO.')
+                                return 'NÃO'
+                    self.log('Laudo médico NÃO encontrado na timeline')
+                    return 'NÃO'
+                except Exception as e:
+                    self.log(f'Erro ao buscar na timeline: {e}')
+                    return 'NÃO'
+            except Exception as e:
+                if 'Interrompido pelo usuario' in str(e):
+                    self.log('Busca interrompida pelo usuario')
+                    return 'PARADO'
+                msg = str(e)
+                eh_sessao = (not msg.strip() or 'no such window' in msg.lower()
+                             or 'target frame detached' in msg.lower()
+                             or 'chrome not reachable' in msg.lower()
+                             or 'GetHandleVerifier' in msg
+                             or 'NoneType' in msg)
+                tentativas -= 1
+                if eh_sessao and tentativas > 0:
+                    self.log(f'Erro de sessao ao verificar {nr_processo}. Relancando Chrome e repetindo...')
+                    if self.recuperar_sessao():
+                        time.sleep(3)
+                        if self.sessao_valida():
+                            continue
+                    tentativas = 0
+                self.log(f'ERRO buscar_pje {nr_processo}: {e}')
+                return f'ERRO: {e}'
+            finally:
+                if self.driver:
+                    try:
+                        if len(self.driver.window_handles) >= 2:
+                            self.driver.close()
+                            self.driver.switch_to.window(self.driver.window_handles[0])
+                        # Reseta o estado do ngFrame para a próxima iteração
+                        self.driver.switch_to.default_content()
+                        self.entrar_ngframe()
+                        try:
+                            home = WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, '.fa.fa-home')))
+                            home.click()
+                            time.sleep(2)
+                        except Exception:
+                            pass
+                    except Exception as fe:
+                        self.log(f'Aviso: falha ao fechar aba extra ou resetar frame: {fe}')
+        return 'ERRO: excedeu tentativas'
 
     def salvar_resultado(self, dados_lista, caminho_saida):
         self.log(f'Salvando {len(dados_lista)} resultados...')
@@ -277,31 +432,20 @@ class Scraper:
 
     def verificar_juntadas(self):
         """Etapa 2: Espera login do usuario e verifica juntada de Laudo Medico no PJe."""
+        # IMPORTANTE: threading.Event e "colante" - se ficou setado de uma execucao
+        # anterior, wait() retorna na hora e o botao de login nunca aparece.
+        # Limpa no inicio de CADA execucao para sempre aguardar o login manual.
+        self.login_event.clear()
         self.log('Etapa 2: Aguardando login no PJe...')
+        self.log('ATENCAO: Navegue manualmente ate o menu Painel > Painel do Usuario no navegador Chrome ABERTO.')
+        self.log('Somente depois de chegar na tela do Painel de Usuario, clique no botao "Ja loguei no PJe".')
         self.login_event.wait()
         self.log('Login PJe confirmado. Conectando ao Chrome...')
         self.running = True
         self.done = False
         try:
             self.conectar_pje()
-            self.log('Navegando para Painel > Painel do Usuario...')
-            try:
-                from selenium.webdriver.common.by import By
-                from selenium.webdriver.support.ui import WebDriverWait
-                from selenium.webdriver.support import expected_conditions as EC
-                menu_painel = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.LINK_TEXT, 'Painel'))
-                )
-                menu_painel.click()
-                time.sleep(2)
-                submenu = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.LINK_TEXT, 'Painel do Usuario'))
-                )
-                submenu.click()
-                time.sleep(3)
-                self.log('Painel do Usuario carregado.')
-            except Exception as e:
-                self.log(f'Navegacao para Painel do Usuario falhou: {e}. Continuando...')
+            time.sleep(2)
             total = len(self.resultados)
             for i, proc in enumerate(self.resultados, 1):
                 if self.stop_event.is_set():
@@ -343,6 +487,17 @@ class Scraper:
             metadados = self.extrair_metadados(doc)
             self.log(f'Metadados: {metadados}')
             dados = self.extrair_dados_docx(doc)
+            # Deduplicar por nr_processo (mantém a primeira ocorrência)
+            vistos = set()
+            dados_unicos = []
+            for d in dados:
+                nr = d.get('nr_processo')
+                if nr and nr not in vistos:
+                    vistos.add(nr)
+                    dados_unicos.append(d)
+            if len(dados_unicos) != len(dados):
+                self.log(f'Removidos {len(dados) - len(dados_unicos)} processos duplicados.')
+            dados = dados_unicos
             for d in dados:
                 d.update(metadados)
                 local = (d.get('local') or '').upper()

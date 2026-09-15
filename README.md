@@ -84,7 +84,15 @@ Automação Flask-based (Robo_ajg) que:
 ✅ Interface com seções PJe + AJG (AJG hidden ate conclusao da Etapa 2)  
 ✅ SSE streams `/logs` e `/logs-ajg` para atualizacao em tempo real  
 ✅ `docx_fix.py` removido (template ja tem `accept=".docx"`)  
-✅ 11 scripts de debug removidos (add_login_btn.py, check_accept.py, etc.)  
+✅ 11 scripts de debug removidos (add_login_btn.py, check_accept.py, etc.)
+
+## Funcionalidade Adicional
+
+**Filtro por Vara/Unidade:** A interface agora possui um campo "Filtrar vara" que permite ao usuário digitar o nome da vara (ex: "2ª Vara Cível", "3ª Vara Criminal"). Ao digitar, a lista de processos abaixo é filtrada para mostrar apenas aqueles cujo campo `vara` contenha esse texto. Isolado útil quando o usuário está lotado em uma unidade específica e quer ver apenas os processos dessa vara.
+
+✅ Endpoint `/processos` que lê o `resultado.xlsx` e retorna processos (com filtro opcional por `vara`)
+✅ Campo de texto na toolbar PJe para digitar a vara
+✅ Atualização em tempo real ao digitar  
 
 ## Observacoes
 

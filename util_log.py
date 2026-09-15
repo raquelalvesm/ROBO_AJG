@@ -1,14 +1,12 @@
 import os
-from datetime import datetime
-from paths import base_dir
-
-PASTA_LOGS = os.path.join(base_dir(), 'logs')
+from paths import pasta_logs
 
 
 def escrever_log(arquivo, linha):
     try:
-        os.makedirs(PASTA_LOGS, exist_ok=True)
-        caminho = os.path.join(PASTA_LOGS, arquivo)
+        pasta = pasta_logs()
+        os.makedirs(pasta, exist_ok=True)
+        caminho = os.path.join(pasta, arquivo)
         with open(caminho, 'a', encoding='utf-8') as f:
             f.write(linha + '\n')
     except Exception:

@@ -17,13 +17,10 @@ from paths import base_dir
 
 
 def matar_processo_chrome():
-    """Matiza todos os processos chrome.exe e chromedriver.exe em execução."""
+    """Mata todos os processos chrome.exe e chromedriver.exe em execução."""
     try:
-        import subprocess
-        # Tenta matar processos chrome e chromedriver
-        subprocess.run(['taskkill', '/IM', 'chrome.exe', '/F'], capture_output=True, shell=True)
-        subprocess.run(['taskkill', '/IM', 'chromedriver.exe', '/F'], capture_output=True, shell=True)
-        time.sleep(1)
+        from util_processo import matar_processo_chrome as _m
+        _m()
     except Exception:
         pass
 
@@ -33,7 +30,7 @@ URL_LOGIN_AJG = ('https://ajg1.cjf.jus.br/aj/seguranca/efetuarloginintranet/'
 
 
 class ScraperAJG:
-    def __init__(self, debugger_address=None):
+    def __init__(self, debugger_address=None, vara=None):
         self.logs = []
         self.log_event = threading.Event()
         self.login_event = threading.Event()
@@ -42,6 +39,7 @@ class ScraperAJG:
         self.done = False
         self.driver = None
         self.debugger_address = debugger_address
+        self.vara = vara
 
     def log(self, msg):
         ts = datetime.now().strftime('%H:%M:%S')
@@ -351,84 +349,289 @@ class ScraperAJG:
 
     def preencher_honorarios_e_solicitacao(self, dados):
         """Honorarios -> busca perito -> valor -> concluir -> criar solicitacao -> final."""
+        nome_perito = dados.get('nome', '')
+        self.log(f'  [6/6] Preenchendo honorarios + solicitacao... (perito={nome_perito})')
+
         # Honorarios
+        self.log('  [6/6] Selecionando PERITAS(OS)...')
         Select(self.driver.find_element(By.ID, 'formAJIntranet:id_honorarios')).select_by_visible_text('PERITAS(OS)')
         if dados.get('data_servico'):
+            self.log(f'  [6/6] Preenchendo data servico: {dados["data_servico"]}')
             self.driver.find_element(By.ID, 'formAJIntranet:id_dataPrestServ').send_keys(dados['data_servico'])
+        self.log('  [6/6] Clicando localPrestServ...')
         self.driver.find_element(By.ID, 'formAJIntranet:localPrestServ').click()
         time.sleep(1)
 
-        # Abrir busca profissional (carrega tabela gaveta_03 na mesma pagina)
+        # Salvar janela principal
+        janela_principal = self.driver.current_window_handle
+        janelas_antes = set(self.driver.window_handles)
+        self.log(f'  [6/6] Janela principal: {janela_principal}')
+        self.log(f'  [6/6] Janelas antes do click: {len(janelas_antes)}')
+
+        # Clicar botao que abre popup
+        self.log('  [6/6] Clicando botaoPesquisarProfissinal (abre popup)...')
         btn_pesq = WebDriverWait(self.driver, 30).until(
             EC.element_to_be_clickable((By.ID, 'formAJIntranet:botaoPesquisarProfissinal'))
         )
         self.driver.execute_script("arguments[0].click();", btn_pesq)
+        time.sleep(3)
 
-        WebDriverWait(self.driver, 30).until(
-            lambda d: len(d.find_element(By.ID, 'gaveta_03').find_elements(By.TAG_NAME, 'tr')) > 1
-        )
-        time.sleep(1)
+        # Detectar popup (nova janela)
+        self.log('  [6/6] Aguardando popup...')
+        janelas_depois = set(self.driver.window_handles)
+        janelas_novas = janelas_depois - janelas_antes
+        self.log(f'  [6/6] Janelas depois: {len(janelas_depois)}, novas: {len(janelas_novas)}')
 
-        nome_perito = dados.get('nome', '')
-        nome_perito_norm = self.remover_acentos(nome_perito).lower()
-        tabela_peritos = self.driver.find_element(By.ID, 'gaveta_03')
-        linhas = tabela_peritos.find_elements(By.TAG_NAME, 'tr')
+        if janelas_novas:
+            # Popup é uma nova janela
+            handle_popup = janelas_novas.pop()
+            self.log(f'  [6/6] Popup encontrado como nova janela: {handle_popup}')
+            self.driver.switch_to.window(handle_popup)
+            time.sleep(2)
+        else:
+            # Popup pode ser um iframe ou dialog no mesmo DOM
+            self.log('  [6/6] Nenhuma nova janela. Buscando iframe ou dialog...')
+            iframes = self.driver.find_elements(By.TAG_NAME, 'iframe')
+            self.log(f'  [6/6] Iframes encontrados: {len(iframes)}')
+            for idx, iframe in enumerate(iframes):
+                iframe_id = iframe.get_attribute('id') or ''
+                iframe_src = iframe.get_attribute('src') or ''
+                self.log(f'    iframe[{idx}]: id={iframe_id} src={iframe_src[:80]}')
+            # Tentar dialog/modal no DOM mesmo
+            dialogs = self.driver.find_elements(By.CSS_SELECTOR, '[role="dialog"], .ui-dialog, .modal')
+            self.log(f'  [6/6] Dialogs/modais: {len(dialogs)}')
 
-        encontrado = False
-        for linha in linhas[1:]:  # pula header "Nome do profissional"
-            texto = self.remover_acentos(linha.text).lower()
-            if nome_perito_norm in texto:
-                self.driver.execute_script("arguments[0].click();", linha.find_element(By.TAG_NAME, 'input'))
-                encontrado = True
-                self.log(f'  Perito selecionado: {nome_perito}')
-                break
+        # Listar todas as janelas
+        self.log(f'  [6/6] Janela atual: {self.driver.current_window_handle}')
+        self.log(f'  [6/6] Todas janelas: {self.driver.window_handles}')
 
-        if not encontrado:
-            for l in linhas:
-                self.log(f'  Linha tabela: {l.text}')
-            raise Exception(f'Perito "{nome_perito}" nao encontrado na gaveta_03')
+        # Buscar campo id_NomeProfissionalGuiaIndividual
+        self.log('  [6/6] Buscando campo id_NomeProfissionalGuiaIndividual...')
+        campo_nome = None
+        seletores = [
+            '#formAJIntranet\\:id_NomeProfissionalGuiaIndividual',
+            'input[id*="NomeProfissionalGuia"]',
+            'input[id*="GuiaIndividual"]',
+            'input[id*="NomeProfissional"]',
+        ]
+        for sel in seletores:
+            encontrados = self.driver.find_elements(By.CSS_SELECTOR, sel)
+            self.log(f'  [6/6] Seletor "{sel}" -> {len(encontrados)} resultado(s)')
+            if encontrados and not campo_nome:
+                campo_nome = encontrados[0]
+                self.log(f'  [6/6] Campo encontrado: id={campo_nome.get_attribute("id")} visible={campo_nome.is_displayed()}')
 
-        # Confirmar selecao do perito
-        try:
-            btn_confirmar = self.driver.find_element(By.ID, 'formAJIntranet:pesquisar')
-            btn_confirmar.click()
-        except NoSuchElementException:
-            candidatos = self.driver.find_elements(By.XPATH,
-                "//input[@type='button' or @type='submit']"
-                "[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'confirm') or "
-                "contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'selecion') or "
-                "contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'ok')]")
-            if candidatos:
-                self.driver.execute_script("arguments[0].click();", candidatos[0])
+        # Fallback: buscar por todos inputs text na pagina atual
+        if not campo_nome:
+            self.log('  [6/6] Campo nao encontrado. Listando todos os inputs text da pagina atual...')
+            all_text = self.driver.find_elements(By.CSS_SELECTOR, 'input[type="text"]')
+            self.log(f'  [6/6] Total inputs text: {len(all_text)}')
+            for idx, inp in enumerate(all_text):
+                self.log(f'    [{idx}] id={inp.get_attribute("id")} value={inp.get_attribute("value") or ""} visible={inp.is_displayed()}')
+
+        if campo_nome:
+            self.log(f'  [6/6] Escrevendo "{nome_perito}" no campo...')
+            # JS para forcar escrita
+            self.driver.execute_script("""
+                var el = arguments[0];
+                el.removeAttribute('readonly');
+                el.removeAttribute('disabled');
+                el.focus();
+            """, campo_nome)
+            time.sleep(0.3)
+            ActionChains(self.driver).click(campo_nome).perform()
+            time.sleep(0.3)
+            campo_nome.send_keys(Keys.CONTROL + 'a')
+            time.sleep(0.2)
+            campo_nome.send_keys(Keys.DELETE)
+            time.sleep(0.2)
+            campo_nome.send_keys(nome_perito)
+            time.sleep(0.5)
+            valor = campo_nome.get_attribute('value') or ''
+            self.log(f'  [6/6] Valor no campo: "{valor}"')
+
+            # Se vazio, forcar via JS
+            if not valor:
+                self.log('  [6/6] Valor vazio, forçando via JS...')
+                self.driver.execute_script("arguments[0].value = arguments[1];", campo_nome, nome_perito)
+                time.sleep(0.3)
+                valor = campo_nome.get_attribute('value') or ''
+                self.log(f'  [6/6] Valor apos JS: "{valor}"')
+
+            # Clicar botao pesquisar no popup (id=FormAJIntranet:pesquisar)
+            self.log('  [6/6] Buscando botao pesquisar no popup...')
+            btn_pesq_popup = None
+
+            # 1. Buscar por ID exato (com variações de case)
+            for id_tentativa in ['FormAJIntranet:pesquisar', 'formAJIntranet:pesquisar']:
+                encontrados = self.driver.find_elements(By.ID, id_tentativa)
+                self.log(f'  [6/6] ID "{id_tentativa}" -> {len(encontrados)} resultado(s)')
+                for en in encontrados:
+                    self.log(f'    tag={en.tag_name} type={en.get_attribute("type")} visible={en.is_displayed()}')
+                    if en.is_displayed() and not btn_pesq_popup:
+                        btn_pesq_popup = en
+
+            # 2. Buscar por input/image com "pesquisar" no ID
+            if not btn_pesq_popup:
+                candidatos = self.driver.find_elements(By.CSS_SELECTOR,
+                    "input[id*='esquisar'], input[id*='esq'], button[id*='esquisar'], input[type='image'][id*='esquisar']"
+                )
+                self.log(f'  [6/6] Busca por ID parcial: {len(candidatos)} resultado(s)')
+                for idx, btn in enumerate(candidatos):
+                    vis = btn.is_displayed()
+                    self.log(f'    [{idx}] id={btn.get_attribute("id")} type={btn.get_attribute("type")} visible={vis}')
+                    if vis and not btn_pesq_popup:
+                        btn_pesq_popup = btn
+
+            # 3. Buscar por xpath: input com value/text "pesquisar"
+            if not btn_pesq_popup:
+                candidatos = self.driver.find_elements(By.XPATH,
+                    "//*[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'pesquisar') or "
+                    "contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'pesquisar')]"
+                )
+                self.log(f'  [6/6] Busca por texto: {len(candidatos)} resultado(s)')
+                for idx, btn in enumerate(candidatos):
+                    vis = btn.is_displayed()
+                    self.log(f'    [{idx}] tag={btn.tag_name} id={btn.get_attribute("id")} type={btn.get_attribute("type")} visible={vis}')
+                    if vis and not btn_pesq_popup:
+                        btn_pesq_popup = btn
+
+            if btn_pesq_popup:
+                self.log(f'  [6/6] Clicando pesquisar: id={btn_pesq_popup.get_attribute("id")}...')
+                self.driver.execute_script("arguments[0].click();", btn_pesq_popup)
+                time.sleep(4)
             else:
-                self.log('  AVISO: botao confirmar do perito nao encontrado; tentando avancar...')
+                self.log('  [6/6] Botao nao encontrado, tentando Enter...')
+                campo_nome.send_keys(Keys.RETURN)
+                time.sleep(4)
+
+            # Listar radios disponiveis
+            self.log('  [6/6] Buscando radios na pagina do popup...')
+            radios = self.driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+            self.log(f'  [6/6] Total de radios: {len(radios)}')
+            for idx, radio in enumerate(radios):
+                onclick = radio.get_attribute('onclick') or ''
+                self.log(f'    radio[{idx}]: visible={radio.is_displayed()} onclick={onclick[:150]}')
+
+            # Buscar perito nos radios
+            nome_norm = self.remover_acentos(nome_perito).lower()
+            encontrado = False
+            for radio in radios:
+                onclick = radio.get_attribute('onclick') or ''
+                if nome_norm in self.remover_acentos(onclick).lower():
+                    self.driver.execute_script("arguments[0].click();", radio)
+                    encontrado = True
+                    self.log(f'  Perito selecionado: {nome_perito}')
+                    break
+
+            # Busca parcial
+            if not encontrado:
+                self.log('  [6/6] Busca exata falhou. Tentando parcial...')
+                for radio in radios:
+                    onclick = radio.get_attribute('onclick') or ''
+                    texto = self.remover_acentos(onclick).lower()
+                    for palavra in nome_norm.split():
+                        if len(palavra) > 2 and palavra in texto:
+                            self.driver.execute_script("arguments[0].click();", radio)
+                            self.log(f'  Perito selecionado por parcial: {nome_perito}')
+                            encontrado = True
+                            break
+                    if encontrado:
+                        break
+
+            if not encontrado:
+                self.log(f'  ERRO: Perito "{nome_perito}" nao encontrado nos radios. Pulando.')
+                if len(self.driver.window_handles) > 1:
+                    self.driver.close()
+                self.driver.switch_to.window(janela_principal)
+                return False
+
+            # Clicar botao CONCLUIR no popup (id=FormAJIntranet:pesquisar type=image)
+            time.sleep(1)
+            self.log('  [6/6] Clicando concluir no popup...')
+            btn_concluir = None
+            for id_tentativa in ['FormAJIntranet:pesquisar', 'formAJIntranet:pesquisar']:
+                encontrados = self.driver.find_elements(By.ID, id_tentativa)
+                for en in encontrados:
+                    tag = en.tag_name
+                    tipo = en.get_attribute('type') or ''
+                    vis = en.is_displayed()
+                    self.log(f'    ID "{id_tentativa}": tag={tag} type={tipo} visible={vis}')
+                    if vis and not btn_concluir:
+                        btn_concluir = en
+
+            if not btn_concluir:
+                # Buscar input type=image com "concluir" no src
+                imgs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='image']")
+                self.log(f'  [6/6] Inputs image encontrados: {len(imgs)}')
+                for idx, img in enumerate(imgs):
+                    src = img.get_attribute('src') or ''
+                    vis = img.is_displayed()
+                    self.log(f'    img[{idx}]: id={img.get_attribute("id")} src={src[:80]} visible={vis}')
+                    if vis and ('concluir' in src.lower() or 'pesquis' in src.lower()):
+                        btn_concluir = img
+                        break
+
+            if btn_concluir:
+                self.log('  [6/6] Clicando concluir...')
+                self.driver.execute_script("arguments[0].click();", btn_concluir)
+                time.sleep(3)
+            else:
+                self.log('  [6/6] Botao concluir nao encontrado no popup')
+
+        else:
+            self.log(f'  ERRO: Campo de busca nao encontrado. Pulando processo.')
+            if len(self.driver.window_handles) > 1:
+                self.driver.close()
+            self.driver.switch_to.window(janela_principal)
+            return False
+
+        # Voltar para janela principal
+        self.log('  [6/6] Fechando popup e voltando para janela principal...')
+        if len(self.driver.window_handles) > 1:
+            self.driver.close()
+        self.driver.switch_to.window(janela_principal)
+        time.sleep(2)
+
+        # Avancar para valor
+        self.log('  [6/6] Avancando para tela de valor estimado...')
+        avancar = self.driver.find_element(By.ID, 'formAJIntranet:avancar')
+        self.driver.execute_script("arguments[0].click();", avancar)
         self.esperar_ajg_com_timeout(self.driver)
-        time.sleep(1)
-        self.log('  Perito confirmado.')
+        time.sleep(2)
 
         # Valor estimado honorarios
-        self.driver.find_element(By.ID, 'formAJIntranet:avancar').click()
-        self.esperar_ajg_com_timeout(self.driver)
-        time.sleep(1)
-
+        self.log(f'  [6/6] Buscando campo valor estimado... (valor={dados.get("valor")})')
         campo_valor = WebDriverWait(self.driver, 60).until(
             EC.visibility_of_element_located((By.ID, 'formAJIntranet:id_valorEstimadoHonorarios'))
         )
+        self.log(f'  [6/6] Campo valor encontrado. Preenchendo...')
         if dados.get('valor'):
-            campo_valor.send_keys(dados['valor'])
-        self.log('  Preenchi os dados de honorarios (valor estimado).')
+            campo_valor.click()
+            time.sleep(0.3)
+            campo_valor.send_keys(str(dados['valor']))
+            time.sleep(0.5)
+            valor_escrito = campo_valor.get_attribute('value') or ''
+            self.log(f'  [6/6] Valor escrito no campo: "{valor_escrito}"')
+        self.log('  Valor estimado preenchido.')
 
-        WebDriverWait(self.driver, 60).until(
-            EC.visibility_of_element_located((By.ID, 'formAJIntranet:concluir'))
-        ).click()
+        # Clicar concluir
+        self.log('  [6/6] Clicando concluir...')
+        concluir = WebDriverWait(self.driver, 60).until(
+            EC.element_to_be_clickable((By.ID, 'formAJIntranet:concluir'))
+        )
+        self.driver.execute_script("arguments[0].click();", concluir)
         self.esperar_ajg_com_timeout(self.driver)
         time.sleep(1)
+        self.log('  Concluido.')
 
+        # Criar solicitacao
+        self.log('  [6/6] Criando solicitacao de pagamento...')
         WebDriverWait(self.driver, 60).until(
-            EC.visibility_of_element_located((By.ID, 'formAJIntranet:criarSolicitacao'))
-        ).click()
+            EC.element_to_be_clickable((By.ID, 'formAJIntranet:criarSolicitacao'))
+        )
+        self.driver.execute_script("arguments[0].click();", self.driver.find_element(By.ID, 'formAJIntranet:criarSolicitacao'))
         self.esperar_ajg_com_timeout(self.driver)
-        time.sleep(1)
         self.log('  Criei solicitacao de pagamento.')
 
         # Dados finais da solicitacao
@@ -464,6 +667,11 @@ class ScraperAJG:
                 return
 
             resultados = self.ler_resultado(CAMINHO_RESULTADO)
+
+            if self.vara:
+                resultados = [r for r in resultados if r.get('vara', '').strip() == self.vara]
+                self.log(f'Filtrando por vara "{self.vara}": {len(resultados)} processo(s)')
+
             self.log(f'Processos com juntada=OK: {len(resultados)}')
 
             if not resultados:
@@ -544,7 +752,6 @@ class ScraperAJG:
                         self.cancelar_e_voltar_inicio()
                         continue
 
-                    self.log('  [6/6] Preenchendo honorarios + solicitacao...')
                     self.preencher_honorarios_e_solicitacao(dados)
                     self.log(f'  PROCESSO {nr_processo} CONCLUIDO!')
 
