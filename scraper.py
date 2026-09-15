@@ -373,7 +373,11 @@ class Scraper:
                     self.log('Laudo médico NÃO encontrado na timeline')
                     return 'NÃO'
                 except Exception as e:
-                    self.log(f'Erro ao buscar na timeline: {e}')
+                    msg_erro = str(e).split('\n')[0].strip()
+                    if 'timeout' in msg_erro.lower() or 'no such element' in msg_erro.lower():
+                        self.log(f'Processo {nr_processo} nao encontrado no PJe.')
+                    else:
+                        self.log(f'Erro ao buscar processo: {msg_erro}')
                     return 'NÃO'
             except Exception as e:
                 if 'Interrompido pelo usuario' in str(e):
@@ -393,8 +397,8 @@ class Scraper:
                         if self.sessao_valida():
                             continue
                     tentativas = 0
-                self.log(f'ERRO buscar_pje {nr_processo}: {e}')
-                return f'ERRO: {e}'
+                    self.log(f'ERRO buscar_pje {nr_processo}: {str(e).split(chr(10))[0]}')
+                    return f'ERRO: {str(e).split(chr(10))[0]}'
             finally:
                 if self.driver:
                     try:
