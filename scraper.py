@@ -145,7 +145,7 @@ class Scraper:
                 metadados['perito'] = t.split(':', 1)[-1].strip()
             elif t_upper.startswith('DATA DA PERÍCIA') or 'DATA DA PERICIA' in t_upper:
                 metadados['data_nomeacao'] = t.split(':', 1)[-1].strip()
-            elif t_upper.startswith('LOCAL'):
+            elif t_upper.startswith('LOCAL') or 'CIDADE DE REALIZAÇÃO' in t_upper or 'CIDADE DE REALIZACAO' in t_upper:
                 metadados['local'] = t.split(':', 1)[-1].strip()
             elif t_upper.startswith('PROFISS'):
                 metadados['profissao'] = t.split(':', 1)[-1].strip()
