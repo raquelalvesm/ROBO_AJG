@@ -118,18 +118,24 @@ class Scraper:
                     'polo_passivo': '',
                     'assinatura_autor': assinatura_autor,
                 })
-                if col1.count('\n') > 0:
-                    linhas_col1 = col1.split('\n')
-                    if len(linhas_col1) > 1:
-                        for l in linhas_col1[1:]:
-                            l_strip = l.strip()
-                            if 'Vara' in l_strip:
-                                dados[-1]['vara'] = l_strip.replace('/', '').strip()
-                            if ' X ' in l_strip and len(l_strip) > 10:
-                                partes = l_strip.split(' X ', 1)
-                                dados[-1]['autor'] = partes[0].strip()
-                                dados[-1]['polo_passivo'] = partes[1].strip()
-                                dados[-1]['partes'] = l_strip
+                # Log do conteúdo da célula para debug
+                self.log(f'  [DEBUG] Celula col1: {repr(col1[:200])}')
+                # Tenta extrair vara de várias formas
+                linhas_col1 = col1.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+                for l in linhas_col1:
+                    l_strip = l.strip()
+                    if not l_strip:
+                        continue
+                    # Procura por padroes de vara
+                    if any(k in l_strip for k in ('Vara', 'vara', 'VARA', 'Juizado', 'JUIZADO', 'Seção', 'SECAO')):
+                        dados[-1]['vara'] = l_strip.replace('/', '').strip()
+                        break
+                    # Procura por " X " para partes
+                    if ' X ' in l_strip and len(l_strip) > 10:
+                        partes = l_strip.split(' X ', 1)
+                        dados[-1]['autor'] = partes[0].strip()
+                        dados[-1]['polo_passivo'] = partes[1].strip()
+                        dados[-1]['partes'] = l_strip
         if not dados:
             self.log('Nenhuma tabela valida encontrada no documento.')
         return dados
