@@ -120,22 +120,33 @@ class Scraper:
                 })
                 # Log do conteúdo da célula para debug
                 self.log(f'  [DEBUG] Celula col1: {repr(col1[:200])}')
-                # Tenta extrair vara de várias formas
-                linhas_col1 = col1.replace('\r\n', '\n').replace('\r', '\n').split('\n')
-                for l in linhas_col1:
-                    l_strip = l.strip()
-                    if not l_strip:
-                        continue
-                    # Procura por padroes de vara
-                    if any(k in l_strip for k in ('Vara', 'vara', 'VARA', 'Juizado', 'JUIZADO', 'Seção', 'SECAO')):
-                        dados[-1]['vara'] = l_strip.replace('/', '').strip()
-                        break
-                    # Procura por " X " para partes
-                    if ' X ' in l_strip and len(l_strip) > 10:
-                        partes = l_strip.split(' X ', 1)
-                        dados[-1]['autor'] = partes[0].strip()
-                        dados[-1]['polo_passivo'] = partes[1].strip()
-                        dados[-1]['partes'] = l_strip
+                # Tenta extrair vara e partes de várias formas
+                # Formato novo: "Nº – Objeto/ VARA / AUTOR X POLO" (separador " / ")
+                partes_slash = [p.strip() for p in col1.split('/')]
+                if len(partes_slash) >= 3:
+                    # Formato com " / " como separador
+                    dados[-1]['vara'] = partes_slash[1].strip()
+                    partes_texto = partes_slash[2].strip()
+                    if ' X ' in partes_texto:
+                        px = partes_texto.split(' X ', 1)
+                        dados[-1]['autor'] = px[0].strip()
+                        dados[-1]['polo_passivo'] = px[1].strip()
+                        dados[-1]['partes'] = partes_texto
+                elif len(partes_slash) == 2:
+                    # Pode ter vara + partes juntas
+                    dados[-1]['vara'] = partes_slash[1].strip()
+                else:
+                    # Fallback: procura por " X " em qualquer linha
+                    linhas_col1 = col1.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+                    for l in linhas_col1:
+                        l_strip = l.strip()
+                        if not l_strip:
+                            continue
+                        if ' X ' in l_strip and len(l_strip) > 10:
+                            partes = l_strip.split(' X ', 1)
+                            dados[-1]['autor'] = partes[0].strip()
+                            dados[-1]['polo_passivo'] = partes[1].strip()
+                            dados[-1]['partes'] = l_strip
         if not dados:
             self.log('Nenhuma tabela valida encontrada no documento.')
         return dados
