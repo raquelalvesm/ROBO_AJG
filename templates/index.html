@@ -78,6 +78,11 @@
 
         <div class="card section-ajg" id="sectionAJG">
             <h2>2. Robô AJG</h2>
+            <div class="upload-area" id="uploadAreaAJG">
+                <input type="file" id="fileInputAJG" accept=".xlsx">
+                <p>Arraste ou clique para enviar o arquivo <strong>.xlsx</strong> (opcional - senão usa resultado do PJe)</p>
+                <span id="uploadMsgAJG"></span>
+            </div>
             <div class="toolbar">
                 <input type="text" class="chrome-input" id="chromeDebuggerAJG" placeholder="IP do Chrome do cliente (ex: 172.27.6.50:9222)" title="Deixe vazio para abrir o Chrome no servidor">
                 <span class="input-hint">vazio = navegador no servidor</span>
@@ -225,6 +230,70 @@
                     }
                 });
         }
+
+        function loadVarasAJG() {
+            fetch('/varas?source=ajg')
+                .then(r => r.json())
+                .then(data => {
+                    const select = document.getElementById('filtroVaraAJG');
+                    if (data.varas && data.varas.length) {
+                        select.innerHTML = '<option value="">-- selecione --</option>';
+                        data.varas.forEach(v => {
+                            const opt = document.createElement('option');
+                            opt.value = v;
+                            opt.textContent = v;
+                            select.appendChild(opt);
+                        });
+                    } else {
+                        select.innerHTML = '<option value="">nenhuma vara encontrada</option>';
+                    }
+                });
+        }
+
+        function uploadFileAJG(file) {
+            const msg = document.getElementById('uploadMsgAJG');
+            const formData = new FormData();
+            formData.append('file', file);
+            msg.className = '';
+            msg.textContent = 'Enviando...';
+            fetch('/upload-arquivo-ajg', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        msg.className = 'error-msg';
+                        msg.textContent = 'Erro: ' + data.error;
+                    } else {
+                        msg.className = 'success-msg';
+                        msg.textContent = '\u2713 ' + data.msg;
+                        loadVarasAJG();
+                    }
+                })
+                .catch(() => {
+                    msg.className = 'error-msg';
+                    msg.textContent = 'Erro ao enviar arquivo';
+                });
+        }
+
+        const uploadAreaAJG = document.getElementById('uploadAreaAJG');
+        const fileInputAJG = document.getElementById('fileInputAJG');
+        fileInputAJG.addEventListener('change', (e) => {
+            if (e.target.files.length) uploadFileAJG(e.target.files[0]);
+        });
+        uploadAreaAJG.addEventListener('click', () => {
+            fileInputAJG.click();
+        });
+        uploadAreaAJG.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadAreaAJG.classList.add('dragover');
+        });
+        uploadAreaAJG.addEventListener('dragleave', () => {
+            uploadAreaAJG.classList.remove('dragover');
+        });
+        uploadAreaAJG.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadAreaAJG.classList.remove('dragover');
+            if (e.dataTransfer.files.length) uploadFileAJG(e.dataTransfer.files[0]);
+        });
 
         function setStatus(el, text, cls) {
             el.textContent = text;

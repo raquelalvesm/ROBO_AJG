@@ -132,6 +132,21 @@ def upload_arquivo():
     return jsonify({'status': 'ok', 'msg': 'Arquivo .docx carregado com sucesso'})
 
 
+CAMINHO_AJG_XLSX = os.path.join(base_dir(), 'resultado_ajg.xlsx')
+
+@app.route('/upload-arquivo-ajg', methods=['POST'])
+def upload_arquivo_ajg():
+    if 'file' not in request.files:
+        return jsonify({'error': 'Nenhum arquivo enviado'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'Nome de arquivo vazio'}), 400
+    if not file.filename.endswith('.xlsx'):
+        return jsonify({'error': 'Apenas arquivos .xlsx'}), 400
+    file.save(CAMINHO_AJG_XLSX)
+    return jsonify({'status': 'ok', 'msg': 'Arquivo .xlsx carregado com sucesso para o AJG'})
+
+
 @app.route('/start', methods=['POST'])
 def iniciar():
     global scraper, scraper_thread
@@ -290,12 +305,17 @@ def resultado_existe():
 
 @app.route('/varas')
 def listar_varas():
-    """Retorna as varas (unidades) encontradas no resultado.xlsx."""
+    """Retorna as varas (unidades) encontradas no xlsx.
+    ?source=ajg -> lê de resultado_ajg.xlsx (upload do usuario)
+    senão -> lê de resultado.xlsx (saida do PJe)
+    """
     import openpyxl
-    if not os.path.exists(CAMINHO_SAIDA):
+    source = request.args.get('source', '').strip()
+    caminho = CAMINHO_AJG_XLSX if source == 'ajg' and os.path.exists(CAMINHO_AJG_XLSX) else CAMINHO_SAIDA
+    if not os.path.exists(caminho):
         return jsonify({'varas': []})
     try:
-        wb = openpyxl.load_workbook(CAMINHO_SAIDA, read_only=True, data_only=True)
+        wb = openpyxl.load_workbook(caminho, read_only=True, data_only=True)
         ws = wb.active
         cabecalhos = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
         vara_idx = cabecalhos.index('vara') if 'vara' in cabecalhos else None
@@ -331,7 +351,9 @@ def iniciar_ajg():
     vara = dados.get('vara', '').strip()
     if not vara:
         return jsonify({'error': 'Selecione a unidade (Vara) antes de iniciar.'}), 400
-    ajg_scraper = ScraperAJG(debugger_address=None, vara=vara)
+    # Usa arquivo uploadado (resultado_ajg.xlsx) ou fallback para resultado.xlsx do PJe
+    caminho_ajg = CAMINHO_AJG_XLSX if os.path.exists(CAMINHO_AJG_XLSX) else None
+    ajg_scraper = ScraperAJG(debugger_address=None, vara=vara, caminho_arquivo=caminho_ajg)
     ajg_thread = threading.Thread(target=ajg_scraper.run, daemon=True)
     ajg_thread.start()
     return jsonify({'status': 'iniciado', 'vara': vara})

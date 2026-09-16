@@ -30,7 +30,7 @@ URL_LOGIN_AJG = ('https://ajg1.cjf.jus.br/aj/seguranca/efetuarloginintranet/'
 
 
 class ScraperAJG:
-    def __init__(self, debugger_address=None, vara=None):
+    def __init__(self, debugger_address=None, vara=None, caminho_arquivo=None):
         self.logs = []
         self.log_event = threading.Event()
         self.login_event = threading.Event()
@@ -40,6 +40,7 @@ class ScraperAJG:
         self.driver = None
         self.debugger_address = debugger_address
         self.vara = vara
+        self.caminho_arquivo = caminho_arquivo  # Caminho do .xlsx uploadado (ou None para usar resultado.xlsx)
 
     def log(self, msg):
         ts = datetime.now().strftime('%H:%M:%S')
@@ -661,12 +662,15 @@ class ScraperAJG:
         self.done = False
 
         try:
-            self.log('ETAPA 1: Lendo resultado.xlsx...')
-            if not os.path.exists(CAMINHO_RESULTADO):
-                self.log('ERRO: resultado.xlsx nao encontrado.')
+            # Usa arquivo uploadado (caminho_arquivo) ou fallback para resultado.xlsx do PJe
+            caminho = self.caminho_arquivo if self.caminho_arquivo and os.path.exists(self.caminho_arquivo) else CAMINHO_RESULTADO
+            nome_arquivo = os.path.basename(caminho)
+            self.log(f'ETAPA 1: Lendo {nome_arquivo}...')
+            if not os.path.exists(caminho):
+                self.log(f'ERRO: {nome_arquivo} nao encontrado.')
                 return
 
-            resultados = self.ler_resultado(CAMINHO_RESULTADO)
+            resultados = self.ler_resultado(caminho)
 
             if self.vara:
                 resultados = [r for r in resultados if r.get('vara', '').strip() == self.vara]
