@@ -76,10 +76,10 @@ class ScraperAJG:
             if dados_row.get('nr_processo'):
                 # Filtrar apenas processos com juntada = OK
                 if dados_row.get('juntada', '').strip().upper() == 'OK':
-                    # Mapear campos do PJe para nomes esperados pelo AJG
-                    dados_row['nome'] = dados_row.get('perito', '')  # perito -> nome
-                    dados_row['data_servico'] = dados_row.get('data_nomeacao', '')  # data_nomeacao -> data_servico
-                    # valor já existe
+                    # Mapear campos do xlsx para nomes esperados pelo AJG
+                    dados_row['nome'] = dados_row.get('perito', '')
+                    dados_row['data_servico'] = dados_row.get('data', '')
+                    dados_row['profissao'] = dados_row.get('profissao', '')
                     resultados.append(dados_row)
         wb.close()
         return resultados
