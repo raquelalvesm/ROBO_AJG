@@ -74,11 +74,9 @@ class ScraperAJG:
             for col_idx, coluna in enumerate(cabecalhos):
                 dados_row[coluna] = str(row[col_idx]) if row[col_idx] else ''
             if dados_row.get('nr_processo'):
-                # Filtrar apenas processos com juntada = OK
                 if dados_row.get('juntada', '').strip().upper() == 'OK':
-                    # Mapear campos do xlsx para nomes esperados pelo AJG
                     dados_row['nome'] = dados_row.get('perito', '')
-                    dados_row['data_servico'] = dados_row.get('data', '')
+                    dados_row['data_servico'] = dados_row.get('data nomeação', '')
                     dados_row['profissao'] = dados_row.get('profissao', '')
                     resultados.append(dados_row)
         wb.close()
