@@ -347,12 +347,13 @@ def download():
 def iniciar_ajg():
     global ajg_scraper, ajg_thread
     if ajg_scraper and ajg_scraper.running:
-        return jsonify({'error': 'Robo AJG ja esta em execucao'}), 400
+        # Se a thread anterior ainda esta viva, nao pode iniciar
+        if ajg_thread and ajg_thread.is_alive():
+            return jsonify({'error': 'Robo AJG ja esta em execucao'}), 400
     dados = request.get_json(silent=True) or {}
     vara = dados.get('vara', '').strip()
     if not vara:
         return jsonify({'error': 'Selecione a unidade (Vara) antes de iniciar.'}), 400
-    # Usa arquivo uploadado (resultado_ajg.xlsx) ou fallback para resultado.xlsx do PJe
     caminho_ajg = CAMINHO_AJG_XLSX if os.path.exists(CAMINHO_AJG_XLSX) else None
     ajg_scraper = ScraperAJG(debugger_address=None, vara=vara, caminho_arquivo=caminho_ajg)
     ajg_thread = threading.Thread(target=ajg_scraper.run, daemon=True)
