@@ -76,7 +76,7 @@ class ScraperAJG:
             if dados_row.get('nr_processo'):
                 if dados_row.get('juntada', '').strip().upper() == 'OK':
                     dados_row['nome'] = dados_row.get('perito', '')
-                    dados_row['data_servico'] = dados_row.get('data nomeação', '')
+                    dados_row['data_servico'] = dados_row.get('data_nomeação', '')
                     dados_row['profissao'] = dados_row.get('profissao', '')
                     resultados.append(dados_row)
         wb.close()
