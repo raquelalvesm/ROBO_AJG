@@ -683,7 +683,7 @@ class ScraperAJG:
                 return
 
             for idx, r in enumerate(resultados, 1):
-                self.log(f'  [{idx}] {r.get("nr_processo")} | {r.get("nome")} | {r.get("profissao")} | data={r.get("data_servico")} | valor={r.get("valor")}')
+                self.log(f'  [{idx}] {r.get("nr_processo")} | {r.get("nome")} | {r.get("profissao")} | {r.get("data_servico")} | {r.get("valor")}')
 
             self.log('ETAPA 2: Abrindo Chrome AJG...')
             try:
