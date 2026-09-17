@@ -121,32 +121,47 @@ class Scraper:
                 # Log do conteúdo da célula para debug
                 self.log(f'  [DEBUG] Celula col1: {repr(col1[:200])}')
                 # Tenta extrair vara e partes de várias formas
-                # Formato novo: "Nº – Objeto/ VARA / AUTOR X POLO" (separador " / ")
-                partes_slash = [p.strip() for p in col1.split('/')]
-                if len(partes_slash) >= 3:
-                    # Formato com " / " como separador
-                    dados[-1]['vara'] = partes_slash[1].strip()
-                    partes_texto = partes_slash[2].strip()
+                # Formato: "PREFIXO NR_PROCESSO DESCRIÇÃO/ VARA / AUTOR X POLO"
+                # Separador entre VARA e AUTOR é " / " (espaço-espaço)
+                # Separador entre DESCRIÇÃO e VARA pode ser "/ " (sem espaço antes)
+                # Ex: "...59/63)/ 6ª Vara... / AUTOR X POLO"
+                partes_space = [p.strip() for p in col1.split(' / ')]
+                if len(partes_space) >= 3:
+                    # Formato padrão com " / " separando todos
+                    dados[-1]['vara'] = partes_space[1].strip()
+                    partes_texto = partes_space[2].strip()
                     if ' X ' in partes_texto:
                         px = partes_texto.split(' X ', 1)
                         dados[-1]['autor'] = px[0].strip()
                         dados[-1]['polo_passivo'] = px[1].strip()
                         dados[-1]['partes'] = partes_texto
-                elif len(partes_slash) == 2:
-                    # Pode ter vara + partes juntas
-                    dados[-1]['vara'] = partes_slash[1].strip()
-                else:
-                    # Fallback: procura por " X " em qualquer linha
+                elif len(partes_space) == 2:
+                    # Descrição+VARA juntas no primeiro bloco, AUTOR X POLO no segundo
+                    bloco1 = partes_space[0].strip()
+                    partes_texto = partes_space[1].strip()
+                    # Rsplit bloco1 por "/" para separar DESCRIÇÃO de VARA
+                    if '/' in bloco1:
+                        desc, vara = bloco1.rsplit('/', 1)
+                        dados[-1]['vara'] = vara.strip()
+                    if ' X ' in partes_texto:
+                        px = partes_texto.split(' X ', 1)
+                        dados[-1]['autor'] = px[0].strip()
+                        dados[-1]['polo_passivo'] = px[1].strip()
+                        dados[-1]['partes'] = partes_texto
+                elif '/' in col1:
+                    # Fallback: rsplit por "/" para pegar VARA
+                    _, maybe_vara = col1.rsplit('/', 1)
+                    dados[-1]['vara'] = maybe_vara.strip()
+                    # Tenta " X " em qualquer linha
                     linhas_col1 = col1.replace('\r\n', '\n').replace('\r', '\n').split('\n')
                     for l in linhas_col1:
                         l_strip = l.strip()
-                        if not l_strip:
-                            continue
                         if ' X ' in l_strip and len(l_strip) > 10:
-                            partes = l_strip.split(' X ', 1)
-                            dados[-1]['autor'] = partes[0].strip()
-                            dados[-1]['polo_passivo'] = partes[1].strip()
+                            px = l_strip.split(' X ', 1)
+                            dados[-1]['autor'] = px[0].strip()
+                            dados[-1]['polo_passivo'] = px[1].strip()
                             dados[-1]['partes'] = l_strip
+                            break
         if not dados:
             self.log('Nenhuma tabela valida encontrada no documento.')
         return dados
