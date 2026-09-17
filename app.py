@@ -152,7 +152,8 @@ def upload_arquivo_ajg():
 def iniciar():
     global scraper, scraper_thread
     if scraper and scraper.running:
-        return jsonify({'error': 'Ja esta em execucao'}), 400
+        if scraper_thread and scraper_thread.is_alive():
+            return jsonify({'error': 'Ja esta em execucao'}), 400
     if not scraper:
         scraper = Scraper()
     # Etapa 1: Extrair dados do .docx (sem Chrome ainda)
