@@ -120,48 +120,41 @@ class Scraper:
                 })
                 # Log do conteúdo da célula para debug
                 self.log(f'  [DEBUG] Celula col1: {repr(col1[:200])}')
-                # Tenta extrair vara e partes de várias formas
-                # Formato: "PREFIXO NR_PROCESSO DESCRIÇÃO/ VARA / AUTOR X POLO"
-                # Separador entre VARA e AUTOR é " / " (espaço-espaço)
-                # Separador entre DESCRIÇÃO e VARA pode ser "/ " (sem espaço antes)
-                # Ex: "...59/63)/ 6ª Vara... / AUTOR X POLO"
-                partes_space = [p.strip() for p in col1.split(' / ')]
-                if len(partes_space) >= 3:
-                    # Formato padrão com " / " separando todos
-                    dados[-1]['vara'] = partes_space[1].strip()
-                    partes_texto = partes_space[2].strip()
+                # Normalizar separadores: adicionar espaco antes de "/" quando seguido de espaco
+                # Ex: "VARA/ 6a Vara" -> "VARA / 6a Vara"
+                # Nao mexe em "59/63" (nao tem espaco depois do /)
+                texto_norm = re.sub(r'(?<!\s)/(?=\s)', ' / ', col1)
+                partes = [p.strip() for p in texto_norm.split(' / ')]
+                if len(partes) >= 3:
+                    # Formato: DESCRIÇÃO / VARA / AUTOR X POLO
+                    dados[-1]['vara'] = partes[1].strip()
+                    partes_texto = partes[2].strip()
                     if ' X ' in partes_texto:
                         px = partes_texto.split(' X ', 1)
                         dados[-1]['autor'] = px[0].strip()
                         dados[-1]['polo_passivo'] = px[1].strip()
                         dados[-1]['partes'] = partes_texto
-                elif len(partes_space) == 2:
-                    # Descrição+VARA juntas no primeiro bloco, AUTOR X POLO no segundo
-                    bloco1 = partes_space[0].strip()
-                    partes_texto = partes_space[1].strip()
-                    # Rsplit bloco1 por "/" para separar DESCRIÇÃO de VARA
-                    if '/' in bloco1:
-                        desc, vara = bloco1.rsplit('/', 1)
-                        dados[-1]['vara'] = vara.strip()
+                elif len(partes) == 2:
+                    # VARA e AUTOR X POLO juntos no segundo bloco
+                    partes_texto = partes[1].strip()
                     if ' X ' in partes_texto:
                         px = partes_texto.split(' X ', 1)
                         dados[-1]['autor'] = px[0].strip()
                         dados[-1]['polo_passivo'] = px[1].strip()
                         dados[-1]['partes'] = partes_texto
                 elif '/' in col1:
-                    # Fallback: rsplit por "/" para pegar VARA
-                    _, maybe_vara = col1.rsplit('/', 1)
-                    dados[-1]['vara'] = maybe_vara.strip()
-                    # Tenta " X " em qualquer linha
-                    linhas_col1 = col1.replace('\r\n', '\n').replace('\r', '\n').split('\n')
-                    for l in linhas_col1:
-                        l_strip = l.strip()
-                        if ' X ' in l_strip and len(l_strip) > 10:
-                            px = l_strip.split(' X ', 1)
-                            dados[-1]['autor'] = px[0].strip()
-                            dados[-1]['polo_passivo'] = px[1].strip()
-                            dados[-1]['partes'] = l_strip
-                            break
+                    # Fallback: rsplit por "/"
+                    parts = col1.rsplit('/', 1)
+                    if len(parts) == 2:
+                        dados[-1]['vara'] = parts[1].strip()
+                        partes_texto = parts[0].strip()
+                    else:
+                        partes_texto = col1
+                    if ' X ' in partes_texto:
+                        px = partes_texto.split(' X ', 1)
+                        dados[-1]['autor'] = px[0].strip()
+                        dados[-1]['polo_passivo'] = px[1].strip()
+                        dados[-1]['partes'] = partes_texto
         if not dados:
             self.log('Nenhuma tabela valida encontrada no documento.')
         return dados
