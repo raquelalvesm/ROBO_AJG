@@ -191,7 +191,6 @@ class ScraperAJG:
             self.driver.find_element(By.XPATH,
                 '/html/body/form/div[3]/span/table/tbody/tr[7]/td[2]/fieldset/span/span/input[2]').click()
 
-        self.driver.find_element(By.ID, 'formAJIntranet:concBenefAssistDeficBenefPrevIncLab').click()
         self.log('  Dados da nomeacao preenchidos.')
         self.driver.find_element(By.ID, 'formAJIntranet:avancar').click()
 
