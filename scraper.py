@@ -319,7 +319,7 @@ class Scraper:
                 self.driver.switch_to.default_content()
                 campo = self.driver.find_element(By.ID, 'divTimeLine:txtPesquisa')
                 campo.clear()
-                campo.send_keys('Juntada de Laudo Médico')
+                campo.send_keys('Juntada de Laudo')
                 time.sleep(2)
                 self._check_stop()
                 botoes = self.driver.find_elements(By.TAG_NAME, 'button')
@@ -345,8 +345,8 @@ class Scraper:
                     movimentos = self.driver.find_elements(By.CSS_SELECTOR, ".text-upper.texto-movimento")
                     for mov in movimentos:
                         texto = mov.text.strip().upper()
-                        if "JUNTADA DE LAUDO MÉDICO" in texto or "JUNTADA DE LAUDO MEDICO" in texto:
-                            self.log(f'Laudo médico encontrado na timeline: {mov.text[:150]}')
+                        if "JUNTADA DE LAUDO" in texto:
+                            self.log(f'Juntada de Laudo encontrado na timeline: {mov.text[:150]}')
                             # ── VALIDAÇÃO ANTI-FALSO-POSITIVO ─────────────
                             # Confirma que a timeline aberta é realmente do processo pesquisado.
                             # Se o PJe não recarregou a timeline (ficou cache do processo anterior),
@@ -395,12 +395,12 @@ class Scraper:
                             except Exception as ve:
                                 self.log(f'Falha ao validar processo na timeline ({ve}). Tratando como NÃO.')
                                 return 'NÃO'
-                    self.log('Laudo médico NÃO encontrado na timeline')
+                    self.log('Juntada de Laudo NAO encontrado na timeline')
                     return 'NÃO'
                 except Exception as e:
                     msg_erro = str(e).split('\n')[0].strip()
                     if 'timeout' in msg_erro.lower() or 'no such element' in msg_erro.lower():
-                        self.log(f'Laudo medico nao encontrado no processo {nr_processo}.')
+                        self.log(f'Juntada de Laudo nao encontrada no processo {nr_processo}.')
                     else:
                         self.log(f'Erro ao buscar laudo no processo: {msg_erro}')
                     return 'NÃO'
