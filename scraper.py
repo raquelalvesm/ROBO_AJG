@@ -35,7 +35,7 @@ CAMINHO_DOCX = os.path.join(base_dir(), 'entrada.docx')
 CAMINHO_SAIDA = os.path.join(base_dir(), 'resultado.xlsx')
 MESES = {'janeiro': '01', 'fevereiro': '02', 'marco': '03', 'abril': '04', 'maio': '05', 'junho': '06',
          'julho': '07', 'agosto': '08', 'setembro': '09', 'outubro': '10', 'novembro': '11', 'dezembro': '12'}
-COLUNAS_SAIDA = ['nr_processo', 'perito', 'profissao', 'data_nomeacao', 'local', 'objeto_acao', 'vara', 'autor', 'polo_passivo', 'assinatura_autor', 'valor', 'juntada']
+COLUNAS_SAIDA = ['nr_processo', 'perito', 'profissao', 'data_nomeacao', 'local', 'vara', 'autor', 'polo_passivo', 'assinatura_autor', 'valor', 'juntada', 'nome_juntada']
 REGEX_NR_PROCESSO = re.compile(r'(\d{7}-\d{2}\.\d{4}\.\d{1,2}\.\d{1,2}\.\d{4})')
 VALOR_PIRIPIRI = 'R$ 350,00'
 VALOR_OUTROS = 'R$ 300,00'
@@ -112,7 +112,6 @@ class Scraper:
                         break
                 dados.append({
                     'nr_processo': nr,
-                    'objeto_acao': col1,
                     'vara': '',
                     'autor': '',
                     'polo_passivo': '',
@@ -267,15 +266,16 @@ class Scraper:
             return False
 
     def buscar_pje(self, nr_processo, tentativas=2):
+        nome_juntada = ''
         while tentativas > 0:
             if not self.driver:
                 self.log('Sessao do Chrome nao disponivel. Tentando reconectar...')
                 if not self.recuperar_sessao():
-                    return 'ERRO: Chrome desconectado'
+                    return ('ERRO: Chrome desconectado', '')
             if not self.sessao_valida():
                 self.log('Sessao do Chrome indisponivel. Tentando reconectar...')
                 if not self.recuperar_sessao():
-                    return 'ERRO: Chrome desconectado'
+                    return ('ERRO: Chrome desconectado', '')
             try:
                 self._check_stop()
                 self.log('Login PJe confirmado. Iniciando busca...')
@@ -346,7 +346,8 @@ class Scraper:
                     for mov in movimentos:
                         texto = mov.text.strip().upper()
                         if "JUNTADA DE LAUDO" in texto:
-                            self.log(f'Juntada de Laudo encontrado na timeline: {mov.text[:150]}')
+                            nome_juntada = mov.text.strip()[:200]
+                            self.log(f'Juntada de Laudo encontrado na timeline: {nome_juntada[:150]}')
                             # ── VALIDAÇÃO ANTI-FALSO-POSITIVO ─────────────
                             # Confirma que a timeline aberta é realmente do processo pesquisado.
                             # Se o PJe não recarregou a timeline (ficou cache do processo anterior),
@@ -362,7 +363,7 @@ class Scraper:
 
                                 if _timeline_exibe_alvo():
                                     self.log(f'Validado: timeline exibe o processo {nr_processo}. Confirmando OK.')
-                                    return 'OK'
+                                    return ('OK', nome_juntada)
 
                                 # Cache do processo anterior. Forca um F5/reload da timeline para
                                 # limpar o cache do processo anterior e re-executar a consulta no
@@ -387,27 +388,27 @@ class Scraper:
                                     if _timeline_exibe_alvo():
                                         self.log(f'Validado (apos F5 na timeline): timeline exibe o '
                                                  f'processo {nr_processo}. Confirmando OK.')
-                                        return 'OK'
+                                        return ('OK', nome_juntada)
                                 self.log(f'ALERTA FALSO POSITIVO: timeline NAO exibe o processo {nr_processo} '
                                          f'(mesmo apos F5 3x - provavelmente cache permanente do processo '
                                          f'anterior). Marcando NÃO para evitar erro.')
-                                return 'NÃO'
+                                return ('NÃO', '')
                             except Exception as ve:
                                 self.log(f'Falha ao validar processo na timeline ({ve}). Tratando como NÃO.')
-                                return 'NÃO'
+                                return ('NÃO', '')
                     self.log('Juntada de Laudo NAO encontrado na timeline')
-                    return 'NÃO'
+                    return ('NÃO', '')
                 except Exception as e:
                     msg_erro = str(e).split('\n')[0].strip()
                     if 'timeout' in msg_erro.lower() or 'no such element' in msg_erro.lower():
                         self.log(f'Juntada de Laudo nao encontrada no processo {nr_processo}.')
                     else:
                         self.log(f'Erro ao buscar laudo no processo: {msg_erro}')
-                    return 'NÃO'
+                    return ('NÃO', '')
             except Exception as e:
                 if 'Interrompido pelo usuario' in str(e):
                     self.log('Busca interrompida pelo usuario')
-                    return 'PARADO'
+                    return ('PARADO', '')
                 msg = str(e)
                 eh_sessao = (not msg.strip() or 'no such window' in msg.lower()
                              or 'target frame detached' in msg.lower()
@@ -424,10 +425,10 @@ class Scraper:
                             continue
                     tentativas = 0
                     self.log(f'Erro ao verificar processo {nr_processo}: {msg.split(chr(10))[0][:200]}')
-                    return f'ERRO: {msg.split(chr(10))[0][:200]}'
+                    return (f'ERRO: {msg.split(chr(10))[0][:200]}', '')
                 if tentativas == 0:
                     self.log(f'Erro ao verificar processo {nr_processo}: {msg.split(chr(10))[0][:200]}')
-                    return f'ERRO: {msg.split(chr(10))[0][:200]}'
+                    return (f'ERRO: {msg.split(chr(10))[0][:200]}', '')
             finally:
                 if self.driver:
                     try:
@@ -445,7 +446,7 @@ class Scraper:
                             pass
                     except Exception as fe:
                         self.log(f'Aviso: falha ao fechar aba extra ou resetar frame: {fe}')
-        return 'ERRO: excedeu tentativas'
+        return ('ERRO: excedeu tentativas', '')
 
     def salvar_resultado(self, dados_lista, caminho_saida):
         self.log(f'Salvando {len(dados_lista)} resultados...')
@@ -486,9 +487,10 @@ class Scraper:
                     break
                 nr = proc.get('nr_processo', '')
                 self.log(f'[{i}/{total}] Verificando processo {nr}...')
-                resultado = self.buscar_pje(nr)
+                resultado, nome_juntada = self.buscar_pje(nr)
                 proc['juntada'] = resultado
-                self.log(f'[{i}/{total}] Processo {nr}: juntada = {resultado}')
+                proc['nome_juntada'] = nome_juntada
+                self.log(f'[{i}/{total}] Processo {nr}: juntada = {resultado} | {nome_juntada}')
                 self.salvar_resultado(self.resultados, CAMINHO_SAIDA)
             self.log('Verificacao de juntadas concluida.')
         except Exception as e:
