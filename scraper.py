@@ -119,10 +119,11 @@ class Scraper:
                 })
                 # Log do conteúdo da célula para debug
                 self.log(f'  [DEBUG] Celula col1: {repr(col1[:200])}')
-                # Normalizar separadores: adicionar espaco antes de "/" quando seguido de espaco
-                # Ex: "VARA/ 6a Vara" -> "VARA / 6a Vara"
-                # Nao mexe em "59/63" (nao tem espaco depois do /)
-                texto_norm = re.sub(r'(?<!\s)/(?=\s)', ' / ', col1)
+                # Normalizar: quebra de linha antes de "/" vira espaco
+                # Ex: "Deficiência\n/ 8ª Vara" -> "Deficiência / 8ª Vara"
+                texto_norm = col1.replace('\n/', ' /').replace('\r/', ' /')
+                # Adicionar espaco antes de "/" quando seguido de espaco (sem espaco antes)
+                texto_norm = re.sub(r'(?<!\s)/(?=\s)', ' / ', texto_norm)
                 partes = [p.strip() for p in texto_norm.split(' / ')]
                 if len(partes) >= 3:
                     # Formato: DESCRIÇÃO / VARA / AUTOR X POLO
