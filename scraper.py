@@ -415,6 +415,7 @@ class Scraper:
                              or 'GetHandleVerifier' in msg
                              or 'NoneType' in msg)
                 tentativas -= 1
+                self.log(f'[DEBUG] Erro no processo {nr_processo} (tentativas={tentativas}): {msg[:200]}')
                 if eh_sessao and tentativas > 0:
                     self.log(f'Erro de sessao ao verificar {nr_processo}. Relancando Chrome e repetindo...')
                     if self.recuperar_sessao():
@@ -422,8 +423,11 @@ class Scraper:
                         if self.sessao_valida():
                             continue
                     tentativas = 0
-                    self.log(f'Erro ao verificar processo {nr_processo}: {str(e).split(chr(10))[0]}')
-                    return f'ERRO: {str(e).split(chr(10))[0]}'
+                    self.log(f'Erro ao verificar processo {nr_processo}: {msg.split(chr(10))[0][:200]}')
+                    return f'ERRO: {msg.split(chr(10))[0][:200]}'
+                if tentativas == 0:
+                    self.log(f'Erro ao verificar processo {nr_processo}: {msg.split(chr(10))[0][:200]}')
+                    return f'ERRO: {msg.split(chr(10))[0][:200]}'
             finally:
                 if self.driver:
                     try:
