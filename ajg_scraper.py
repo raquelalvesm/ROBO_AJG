@@ -187,10 +187,14 @@ class ScraperAJG:
         if 'INSS' in dados.get('polo_passivo', '').upper():
             self.driver.find_element(By.XPATH,
                 '/html/body/form/div[3]/span/table/tbody/tr[7]/td[2]/fieldset/span/span/input[1]').click()
+            self.driver.find_element(By.CSS_SELECTOR,
+                "input[name='formAJIntranet:concBenefAssistDeficBenefPrevIncLab'][value='1']").click()
             self.log('  Radio: SIM (INSS)')
         else:
             self.driver.find_element(By.XPATH,
                 '/html/body/form/div[3]/span/table/tbody/tr[7]/td[2]/fieldset/span/span/input[2]').click()
+            self.driver.find_element(By.CSS_SELECTOR,
+                "input[name='formAJIntranet:concBenefAssistDeficBenefPrevIncLab'][value='2']").click()
             self.log('  Radio: NAO (nao-INSS)')
 
         self.log('  Dados da nomeacao preenchidos.')
