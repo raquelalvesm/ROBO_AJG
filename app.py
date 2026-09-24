@@ -192,6 +192,12 @@ def fechar_navegador_pje():
             scraper.driver.quit()
         except Exception:
             pass
+    # Mata processos chrome/chromedriver residuais
+    try:
+        from util_processo import matar_processo_chrome
+        matar_processo_chrome()
+    except Exception:
+        pass
     return jsonify({'status': 'fechado'})
 
 
@@ -382,6 +388,12 @@ def parar_ajg():
 def fechar_navegador_ajg():
     if ajg_scraper:
         ajg_scraper.fechar_navegador()
+        # Mata processos chrome/chromedriver residuais
+        try:
+            from util_processo import matar_processo_chrome
+            matar_processo_chrome()
+        except Exception:
+            pass
         return jsonify({'status': 'fechado'})
     return jsonify({'error': 'sem robo AJG ativo'}), 400
 
