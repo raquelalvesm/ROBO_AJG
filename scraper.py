@@ -337,7 +337,7 @@ class Scraper:
                     time.sleep(3)
                 self._check_stop()
                 
-                # Busca direta na timeline - procura por "Juntada de Laudo Médico" nos movimentos
+                # Busca direta na timeline - procura por "Juntada de Laudo" nos movimentos
                 try:
                     WebDriverWait(self.driver, 10).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, ".text-upper.texto-movimento"))
