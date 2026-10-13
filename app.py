@@ -359,13 +359,11 @@ def iniciar_ajg():
             return jsonify({'error': 'Robo AJG ja esta em execucao'}), 400
     dados = request.get_json(silent=True) or {}
     vara = dados.get('vara', '').strip()
-    if not vara:
-        return jsonify({'error': 'Selecione a unidade (Vara) antes de iniciar.'}), 400
     caminho_ajg = CAMINHO_AJG_XLSX if os.path.exists(CAMINHO_AJG_XLSX) else None
     ajg_scraper = ScraperAJG(debugger_address=None, vara=vara, caminho_arquivo=caminho_ajg)
     ajg_thread = threading.Thread(target=ajg_scraper.run, daemon=True)
     ajg_thread.start()
-    return jsonify({'status': 'iniciado', 'vara': vara})
+    return jsonify({'status': 'iniciado', 'vara': vara or 'todas'})
 
 
 @app.route('/login-ajg', methods=['POST'])

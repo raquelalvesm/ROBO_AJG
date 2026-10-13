@@ -675,10 +675,6 @@ class ScraperAJG:
 
             resultados = self.ler_resultado(caminho)
 
-            if self.vara:
-                resultados = [r for r in resultados if r.get('vara', '').strip() == self.vara]
-                self.log(f'Filtrando por vara "{self.vara}": {len(resultados)} processo(s)')
-
             self.log(f'Processos com juntada=OK: {len(resultados)}')
 
             if not resultados:
