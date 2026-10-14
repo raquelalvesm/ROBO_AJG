@@ -457,11 +457,8 @@
         }
 
         function startAJG() {
-            const vara = document.getElementById('filtroVaraAJG').value.trim();
-            if (!vara) {
-                alert('Selecione a unidade (Vara) antes de iniciar o Robô AJG.');
-                return;
-            }
+            // Vara opcional — se não selecionada, processa todas
+            const vara = '';
             btnStartAJG.disabled = true;
             btnDownload.classList.add('hidden');
             btnCloseBrowserAJG.classList.add('hidden');
