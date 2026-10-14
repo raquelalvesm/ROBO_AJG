@@ -8,7 +8,7 @@ from paths import base_dir
 from util_chrome import criar_driver
 
 app = Flask(__name__)
-__version__ = '1.1.0'
+__version__ = '1.2.0'
 
 # ── Captura global de erros (exe windowed fecha em silêncio) ─────
 def _pasta_logs():
