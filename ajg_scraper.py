@@ -362,8 +362,8 @@ class ScraperAJG:
         if dados.get('data_servico'):
             self.log(f'  [6/6] Preenchendo data servico: {dados["data_servico"]}')
             self.driver.find_element(By.ID, 'formAJIntranet:id_dataPrestServ').send_keys(dados['data_servico'])
-        self.log('  [6/6] Clicando localPrestServ...')
-        self.driver.find_element(By.ID, 'formAJIntranet:localPrestServ').click()
+        self.log('  [6/6] Selecionando localPrestServ (value=2)...')
+        Select(self.driver.find_element(By.ID, 'formAJIntranet:localPrestServ')).select_by_value('2')
         time.sleep(1)
 
         # Salvar janela principal
