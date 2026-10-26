@@ -675,6 +675,13 @@ class ScraperAJG:
 
             resultados = self.ler_resultado(caminho)
 
+            # Filtra por vara somente se uma unidade foi selecionada
+            if self.vara:
+                resultados = [r for r in resultados if r.get('vara', '').strip() == self.vara]
+                self.log(f'Filtrando por vara "{self.vara}": {len(resultados)} processo(s)')
+            else:
+                self.log('Sem filtro de vara: processando todos os processos.')
+
             self.log(f'Processos com juntada=OK: {len(resultados)}')
 
             if not resultados:

@@ -88,6 +88,13 @@
                 <span class="input-hint">vazio = navegador no servidor</span>
             </div>
             <div class="toolbar">
+                <label style="font-size:13px; font-weight:600; color:#555;">Unidade (Vara):</label>
+                <select id="filtroVaraAJG" class="chrome-input" style="flex:0 1 200px; min-width:180px; font-family:inherit;">
+                    <option value="">-- selecione --</option>
+                </select>
+                <span class="input-hint">filtra processos da vara logada</span>
+            </div>
+            <div class="toolbar">
                 <button class="btn btn-ajg" id="btnStartAJG" onclick="startAJG()">Iniciar Robô AJG</button>
                 <button class="btn btn-success hidden" id="btnLoginAJG" onclick="confirmLoginAJG()">✓ Já loguei no AJG</button>
                 <button class="btn btn-danger hidden" id="btnStopAJG" onclick="stopAJG()">Parar AJG</button>
@@ -457,8 +464,11 @@
         }
 
         function startAJG() {
-            // Vara opcional — se não selecionada, processa todas
-            const vara = '';
+            const vara = document.getElementById('filtroVaraAJG').value.trim();
+            if (!vara) {
+                alert('Selecione a unidade (Vara) antes de iniciar o Robô AJG.');
+                return;
+            }
             btnStartAJG.disabled = true;
             btnDownload.classList.add('hidden');
             btnCloseBrowserAJG.classList.add('hidden');
